@@ -1,0 +1,1 @@
+Remove all docker dependencies from terminal: sudo docker stop $(sudo docker ps -a -q) -t 0 && sudo docker system prune -a -f

@@ -1,0 +1,32 @@
+amend = !"git commit --amend -C HEAD"
+st = status
+ci = !git commit -m $@
+co = checkout
+br = branch
+l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
+sm = log --summary
+
+# hard reset
+rshard = reset --hard HEAD
+
+# undo last commit keeping files in stage
+undolast = reset --soft HEAD^
+
+untracked = ls-files . --exclude-standard --others
+ignored = ls-files . --ignored --exclude-standard --others
+
+# unstage file
+unstage = reset HEAD
+
+# unstage and remove local changes 
+discard = checkout HEAD
+
+# show git aliases
+aliases = config --get-regexp alias
+
+# list contributor stats for this repo
+contributors = !git shortlog -n -s --no-merges $@ | cat - && echo && echo total $(git rev-list --count HEAD)
+
+ # decorated graph view of one liner summarized commits from all branches. (inspired by git-extras)
+tree = log --all --graph --decorate --oneline --simplify-by-decoration
+

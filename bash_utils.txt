@@ -1,0 +1,7 @@
+# Echo filename
+for f in *; do 	
+	echo $filename; 
+done;
+
+setxkbmap -model abnt2 -layout br
+
