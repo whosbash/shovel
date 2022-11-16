@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Flowbuild engine.md</title>
+        <style></style>
+    </head>
+    <body id="preview">
+        <h1 class="code-line" data-line-start="0" data-line-end="1"><a id="Flowbuild_engine_0"></a>Flowbuild engine</h1>
+        <p class="has-line-data" data-line-start="2" data-line-end="3">
+            A documentação oficial da engine [1] FlowBuild encontra-se em <a href="https://flow-build.github.io/">https://flow-build.github.io/</a> . Este arquivo não pretende substituir o original, mas a servir o usuário que esteja na lida
+            diária de uso do workflow. Portanto, ele sumariza, de forma unificada, as informações necessárias para utilizá-lo.
+        </p>
+        <h2 class="code-line" data-line-start="4" data-line-end="5"><a id="Prrequisitos_4"></a>Pré-requisitos</h2>
+        <ul>
+            <li class="has-line-data" data-line-start="6" data-line-end="7">OS utilizado: distribuição Linux da sua preferência</li>
+            <li class="has-line-data" data-line-start="7" data-line-end="9">
+                Instruções a usuários Windows: acompanhar passos abaixo e adaptar através de ferramentas <em>Postman</em> ou <em>Insomnia</em> (URL:
+                <a href="https://flow-build.github.io/docs/documentation/instalacao">https://flow-build.github.io/docs/documentation/instalacao</a>)
+            </li>
+        </ul>
+        <h2 class="code-line" data-line-start="9" data-line-end="10"><a id="Recomendao_inicial_9"></a>Recomendação inicial</h2>
+        <p class="has-line-data" data-line-start="11" data-line-end="12">
+            Os comandos <code>curl</code>s desta seção, quando realizados no terminal, vem em formato .json sem indentação e breakline no final. O autor deste tutorial recomenda copiar estes valores json e usar a ferramenta disponível no
+            URL a seguir para formatá-los: <a href="https://jsonformatter.org/">https://jsonformatter.org/</a>.
+        </p>
+        <h2 class="code-line" data-line-start="13" data-line-end="14"><a id="Vocabulrio_13"></a>Vocabulário</h2>
+        <p class="has-line-data" data-line-start="15" data-line-end="16">
+            A ferramenta Flowbuild utiliza alguns artefatos e ações pertinentes ao contexto de processos. Em linhas gerais, nós apresentamos abaixo as principais palavras referentes ao contexto:
+        </p>
+        <ol>
+            <li class="has-line-data" data-line-start="17" data-line-end="18">Workflow: um artefato de fluxo, comumente descrito como diagrama;</li>
+            <li class="has-line-data" data-line-start="18" data-line-end="19">
+                Task: um bloco de um workflow, comumente descrito como <code>nó</code>. As tasks existentes até o momento são: <code>start</code>, <code>finish</code>, <code>systemtask</code>, <code>subprocess</code>,
+                <code>scripttask</code>, <code>flow</code>, <code>usertask</code>;
+            </li>
+            <li class="has-line-data" data-line-start="19" data-line-end="20">Processo: uma instância de um artefato workflow;</li>
+            <li class="has-line-data" data-line-start="20" data-line-end="21">Estado: um retrato temporal minimo de um processo;</li>
+            <li class="has-line-data" data-line-start="21" data-line-end="23">Activity Manager: do inglês “gerente de atividade”, é um entidade que gerencia as atividades de um nó de interface com usuário (User task);</li>
+        </ol>
+        <h2 class="code-line" data-line-start="23" data-line-end="24"><a id="Como_configurar_23"></a>Como configurar</h2>
+        <p class="has-line-data" data-line-start="25" data-line-end="26">
+            Até o momento da confecção deste tutorial, a ferramenta FlowBuild não dispõem lançamento de interface estável. Escolha um diretório de sua preferência, o qual referenciamos como <code>$WORKFLOW_PATH</code>. Desta forma, as
+            instruções necessárias para utilizar o documento seguem
+        </p>
+        <ol>
+            <li class="has-line-data" data-line-start="27" data-line-end="28">
+                <p class="has-line-data" data-line-start="27" data-line-end="28">Clonar <a href="https://github.com/flow-build/workflow-api">https://github.com/flow-build/workflow-api</a> em <code>$WORKFLOW_PATH</code>;</p>
+            </li>
+            <li class="has-line-data" data-line-start="28" data-line-end="32">
+                <p class="has-line-data" data-line-start="28" data-line-end="29">Navegue até o diretório <code>$WORKFLOW_PATH</code> e suba o servidor:</p>
+                <p class="has-line-data" data-line-start="30" data-line-end="31"><code>sudo docker-compose up</code></p>
+            </li>
+            <li class="has-line-data" data-line-start="32" data-line-end="36">
+                <p class="has-line-data" data-line-start="32" data-line-end="33">
+                    Gerar token com comando abaixo por (terminal || Postman || Insomnia) ou URL <a href="http://jwt.io">jwt.io</a>. Os campos <code>{{new_password}}</code> e <code>{{duração}}</code> são opcionais e à escolha do usuário:
+                </p>
+                <p class="has-line-data" data-line-start="34" data-line-end="35">
+                    <code>curl --location --request POST &quot;{{host_url}}/token&quot; --header 'x-secret: {{new_password}}' --header 'x-duration: {{duração}}' --header 'Content-Type: application/json'</code>
+                </p>
+            </li>
+        </ol>
+        <p class="has-line-data" data-line-start="36" data-line-end="37">
+            <strong>Lembre-se:</strong> A senha ‘x-secret’ padrão é 1234 e a duração de expiração ‘x-duration’ padrão 60000 [s], i.e. 1 hora. O autor deste tutorial recomenda utilizar 1 dia (1440000 = [24 h]<em>[60 min]</em>[1000 ms]) para
+            realizar este tutorial.
+        </p>
+        <p class="has-line-data" data-line-start="38" data-line-end="39">
+            <strong>Tome nota</strong>: O cliente (quem faz a requisição) sabe sobre o uso da chave JWT pelo servidor. Desta forma, não é necessario e suficiente o uso do comando acima. Ou seja, qualquer chave que siga as regras JWT é
+            válido, e.g. gerado pelo URL <a href="http://jwt.io">jwt.io</a> ;
+        </p>
+        <p class="has-line-data" data-line-start="40" data-line-end="41"><strong>Lembre-se:</strong> Você deve usar a chave gerada a partir daqui no lugar de <code>{{jwt_token}}</code>;</p>
+        <ol start="4">
+            <li class="has-line-data" data-line-start="42" data-line-end="44">Substituir chave do <code>JWT_KEY</code> em .env.docker pelo token do passo anterior</li>
+        </ol>
+        <h2 class="code-line" data-line-start="44" data-line-end="45"><a id="Como_usar_44"></a>Como usar</h2>
+        <p class="has-line-data" data-line-start="46" data-line-end="47">
+            Caso queira testar com uma blueprint válida, utilize o exemplo <code>simple_bp.json</code> presente neste diretório. Abaixo encontram-se as opções possíveis para utilização da <em>engine</em> Flowbuild. As chamadas
+            <code>curl</code> podem ser executadas no terminal.
+        </p>
+        <p class="has-line-data" data-line-start="48" data-line-end="49">Os campos <code>{{host_url}}</code>, <code>{{jwt_token}}</code>, <code>{{new_password}}</code> e <code>{{workflow_json}}</code> são respectivamente:</p>
+        <ul>
+            <li class="has-line-data" data-line-start="50" data-line-end="51">o link do servidor;</li>
+            <li class="has-line-data" data-line-start="51" data-line-end="52">Um token válido (Se ele expirou, siga os passos da sessão “Configuração” a partir do item 3))</li>
+            <li class="has-line-data" data-line-start="52" data-line-end="54">Senha cadastrada na sessão “Configuração”, item 3)</li>
+        </ul>
+        <p class="has-line-data" data-line-start="54" data-line-end="55"><strong>Tome nota</strong>: Substituir o trecho <code>{{host_url}}</code> por <code>localhost:3000</code>.</p>
+        <p class="has-line-data" data-line-start="56" data-line-end="57">Abaixo, as opões enumeradas correpondem a entidades e suas ações de gerenciamento da <em>engine</em>:</p>
+        <ol>
+            <li class="has-line-data" data-line-start="58" data-line-end="60">Workflows cadastrados:</li>
+        </ol>
+        <ul>
+            <li class="has-line-data" data-line-start="60" data-line-end="66">
+                <p class="has-line-data" data-line-start="60" data-line-end="61">Listar:</p>
+                <p class="has-line-data" data-line-start="62" data-line-end="63"><strong>Requisição :</strong> <code>GET /workflows</code></p>
+                <p class="has-line-data" data-line-start="64" data-line-end="65">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/workflows&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot; --header &quot;x-secret={{new_password}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="66" data-line-end="72">
+                <p class="has-line-data" data-line-start="66" data-line-end="67">Criar/Atualizar:</p>
+                <p class="has-line-data" data-line-start="68" data-line-end="69"><strong>Requisição :</strong> <code>POST /workflows</code></p>
+                <p class="has-line-data" data-line-start="70" data-line-end="71">
+                    <strong>Comando :</strong>
+                    <code>
+                        curl --location --request POST &quot;{{host_url}}/workflows&quot; --header 'content: application/json' --header 'Content-Type: application/json' --header &quot;Authorization: Bearer {{jwt_token}}&quot; --data-raw
+                        {{workflow_json}}
+                    </code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="72" data-line-end="85">
+                <p class="has-line-data" data-line-start="72" data-line-end="73">Consultar por:</p>
+                <ul>
+                    <li class="has-line-data" data-line-start="73" data-line-end="79">
+                        <p class="has-line-data" data-line-start="73" data-line-end="74"><code>{{workflow_id}}</code>:</p>
+                        <p class="has-line-data" data-line-start="75" data-line-end="76"><strong>Requisição :</strong> <code>GET /workflows/{{workflow_id}}</code></p>
+                        <p class="has-line-data" data-line-start="77" data-line-end="78">
+                            <strong>Comando :</strong>
+                            <code>curl --location --request GET &quot;{{host_url}}/workflows/{{workflow_id}}&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot; --header &quot;x-secret={{new_password}}&quot;</code>
+                        </p>
+                    </li>
+                    <li class="has-line-data" data-line-start="79" data-line-end="85">
+                        <p class="has-line-data" data-line-start="79" data-line-end="80"><code>{{workflow_name}}</code>:</p>
+                        <p class="has-line-data" data-line-start="81" data-line-end="82"><strong>Requisição :</strong> <code>GET /workflows/name/{{workflow_name}}</code></p>
+                        <p class="has-line-data" data-line-start="83" data-line-end="84">
+                            <strong>Comando :</strong>
+                            <code>curl --location --request GET &quot;{{host_url}}/workflows/name/{{workflow_name}}&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot; --header &quot;x-secret={{new_password}}&quot;</code>
+                        </p>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+        <ol start="2">
+            <li class="has-line-data" data-line-start="85" data-line-end="87">Processos cadastrados:</li>
+        </ol>
+        <ul>
+            <li class="has-line-data" data-line-start="87" data-line-end="93">
+                <p class="has-line-data" data-line-start="87" data-line-end="88">Listar</p>
+                <p class="has-line-data" data-line-start="89" data-line-end="90"><strong>Requisição :</strong> <code>GET &quot;{{host_url}}/processes&quot;</code></p>
+                <p class="has-line-data" data-line-start="91" data-line-end="92">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="93" data-line-end="99">
+                <p class="has-line-data" data-line-start="93" data-line-end="94">Criar:</p>
+                <p class="has-line-data" data-line-start="95" data-line-end="96"><strong>Requisição :</strong> <code>GET /workflows/{workflow_id}/processes</code></p>
+                <p class="has-line-data" data-line-start="97" data-line-end="98">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/workflows/{{workflow_id}}/processes&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="99" data-line-end="113">
+                <p class="has-line-data" data-line-start="99" data-line-end="100">Iniciar:</p>
+                <ul>
+                    <li class="has-line-data" data-line-start="101" data-line-end="107">
+                        <p class="has-line-data" data-line-start="101" data-line-end="102">Chave <code>{{workflow_id}}</code></p>
+                        <p class="has-line-data" data-line-start="103" data-line-end="104"><strong>Requisição :</strong> <code>GET /workflows/{workflow_id}/processes</code></p>
+                        <p class="has-line-data" data-line-start="105" data-line-end="106">
+                            <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/workflows/{{workflow_id}}/processes&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                        </p>
+                    </li>
+                    <li class="has-line-data" data-line-start="107" data-line-end="113">
+                        <p class="has-line-data" data-line-start="107" data-line-end="108">Chave <code>{{nome do workflow}}</code></p>
+                        <p class="has-line-data" data-line-start="109" data-line-end="110"><strong>Requisição :</strong> <code>/workflows/name/{workflow_name}/start</code></p>
+                        <p class="has-line-data" data-line-start="111" data-line-end="112">
+                            <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/workflows/name/{{nome do workflow}}/start&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                        </p>
+                    </li>
+                </ul>
+            </li>
+            <li class="has-line-data" data-line-start="113" data-line-end="119">
+                <p class="has-line-data" data-line-start="113" data-line-end="114">Ler:</p>
+                <p class="has-line-data" data-line-start="115" data-line-end="116"><strong>Requisição :</strong> <code>GET /workflows/{{workflow_id}}/processes</code></p>
+                <p class="has-line-data" data-line-start="117" data-line-end="118">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/workflows/{{workflow_id}}/processes&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="119" data-line-end="125">
+                <p class="has-line-data" data-line-start="119" data-line-end="120">Acompanhar:</p>
+                <p class="has-line-data" data-line-start="121" data-line-end="122"><strong>Requisição :</strong> <code>GET /processes/{{process_id}}</code></p>
+                <p class="has-line-data" data-line-start="123" data-line-end="124">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes/{{process_id}}&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="125" data-line-end="131">
+                <p class="has-line-data" data-line-start="125" data-line-end="126">Consultar histórico:</p>
+                <p class="has-line-data" data-line-start="127" data-line-end="128"><strong>Requisição :</strong> <code>GET /processes/{{process_id}}/history</code></p>
+                <p class="has-line-data" data-line-start="129" data-line-end="130">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes/{{process_id}}/history&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="131" data-line-end="137">
+                <p class="has-line-data" data-line-start="131" data-line-end="132">Definir estado:</p>
+                <p class="has-line-data" data-line-start="133" data-line-end="134"><strong>Requisição :</strong> <code>POST /cockpit/processes/{{process_id}}/state</code></p>
+                <p class="has-line-data" data-line-start="135" data-line-end="136">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/cockpit/processes/{{process_id}}/state&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="137" data-line-end="157">
+                <p class="has-line-data" data-line-start="137" data-line-end="138">Atualizar:</p>
+                <ul>
+                    <li class="has-line-data" data-line-start="139" data-line-end="145">
+                        <p class="has-line-data" data-line-start="139" data-line-end="140">Abortar</p>
+                        <p class="has-line-data" data-line-start="141" data-line-end="142"><strong>Requisição :</strong> <code>POST /cockpit/processes/{{process_id}}/abort</code></p>
+                        <p class="has-line-data" data-line-start="143" data-line-end="144">
+                            <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/cockpit/processes/{{process_id}}/state&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                        </p>
+                    </li>
+                    <li class="has-line-data" data-line-start="145" data-line-end="151">
+                        <p class="has-line-data" data-line-start="145" data-line-end="146">Sobrescrever estado:</p>
+                        <p class="has-line-data" data-line-start="147" data-line-end="148"><strong>Requisição :</strong> <code>POST /cockpit/processes/{{process_id}}/state</code></p>
+                        <p class="has-line-data" data-line-start="149" data-line-end="150">
+                            <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/cockpit/processes/{{process_id}}/state&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                        </p>
+                    </li>
+                    <li class="has-line-data" data-line-start="151" data-line-end="157">
+                        <p class="has-line-data" data-line-start="151" data-line-end="152">Retomar:</p>
+                        <p class="has-line-data" data-line-start="153" data-line-end="154"><strong>Requisição :</strong> <code>POST /cockpit/processes/{process_id}/state/run</code></p>
+                        <p class="has-line-data" data-line-start="155" data-line-end="156">
+                            <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/cockpit/processes/{{process_id}}/state/run&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                        </p>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+        <ol start="3">
+            <li class="has-line-data" data-line-start="157" data-line-end="159">Activity Managers (Tarefas):</li>
+        </ol>
+        <ul>
+            <li class="has-line-data" data-line-start="159" data-line-end="165">
+                <p class="has-line-data" data-line-start="159" data-line-end="160">Listar:</p>
+                <p class="has-line-data" data-line-start="161" data-line-end="162"><strong>Requisição :</strong> <code>GET &quot;{{host_url}}/processes&quot;</code></p>
+                <p class="has-line-data" data-line-start="163" data-line-end="164">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="165" data-line-end="171">
+                <p class="has-line-data" data-line-start="165" data-line-end="166">Disponíveis:</p>
+                <p class="has-line-data" data-line-start="167" data-line-end="168"><strong>Requisição :</strong> <code>GET /processes/available</code></p>
+                <p class="has-line-data" data-line-start="169" data-line-end="170">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/cockpit/processes/{{process_id}}/state/run&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="171" data-line-end="177">
+                <p class="has-line-data" data-line-start="171" data-line-end="172">Concluídas:</p>
+                <p class="has-line-data" data-line-start="173" data-line-end="174"><strong>Requisição :</strong> <code>GET /processes/done</code></p>
+                <p class="has-line-data" data-line-start="175" data-line-end="176">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes/done&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="177" data-line-end="183">
+                <p class="has-line-data" data-line-start="177" data-line-end="178">Consultar <em>Activity Manager</em> relacionado a um processo:</p>
+                <p class="has-line-data" data-line-start="179" data-line-end="180"><strong>Requisição :</strong> <code>GET /processes/{{process_id}}/activity</code></p>
+                <p class="has-line-data" data-line-start="181" data-line-end="182">
+                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes/{{process_id}}/activity&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                </p>
+            </li>
+            <li class="has-line-data" data-line-start="183" data-line-end="213">
+                <p class="has-line-data" data-line-start="183" data-line-end="184">Atualizar</p>
+                <ul>
+                    <li class="has-line-data" data-line-start="185" data-line-end="199">
+                        <p class="has-line-data" data-line-start="185" data-line-end="186">Salvar:</p>
+                        <ul>
+                            <li class="has-line-data" data-line-start="187" data-line-end="193">
+                                <p class="has-line-data" data-line-start="187" data-line-end="188"><code>{{process_id}}</code></p>
+                                <p class="has-line-data" data-line-start="189" data-line-end="190"><strong>Requisição :</strong> <code>POST /processes/{{process_id}}/commit</code></p>
+                                <p class="has-line-data" data-line-start="191" data-line-end="192">
+                                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes/{{process_id}}/commit&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                                </p>
+                            </li>
+                            <li class="has-line-data" data-line-start="193" data-line-end="199">
+                                <p class="has-line-data" data-line-start="193" data-line-end="194"><code>{{activity_manager_id}}</code></p>
+                                <p class="has-line-data" data-line-start="195" data-line-end="196"><strong>Requisição :</strong> <code>POST /activity_manager/{{activity_manager_id}}/commit</code></p>
+                                <p class="has-line-data" data-line-start="197" data-line-end="198">
+                                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/activity_manager/{{activity_manager_id}}/commit &quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                                </p>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="has-line-data" data-line-start="199" data-line-end="213">
+                        <p class="has-line-data" data-line-start="199" data-line-end="200">Submeter:</p>
+                        <ul>
+                            <li class="has-line-data" data-line-start="201" data-line-end="207">
+                                <p class="has-line-data" data-line-start="201" data-line-end="202"><code>{{process_id}}</code></p>
+                                <p class="has-line-data" data-line-start="203" data-line-end="204"><strong>Requisição :</strong> <code>POST /processes/{{process_id}}/push</code></p>
+                                <p class="has-line-data" data-line-start="205" data-line-end="206">
+                                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/processes/{{process_id}}/push&quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                                </p>
+                            </li>
+                            <li class="has-line-data" data-line-start="207" data-line-end="213">
+                                <p class="has-line-data" data-line-start="207" data-line-end="208"><code>{{activity_manager_id}}</code></p>
+                                <p class="has-line-data" data-line-start="209" data-line-end="210"><strong>Requisição :</strong> <code>POST /activity_manager/{{activity_manager_id}}/submit</code></p>
+                                <p class="has-line-data" data-line-start="211" data-line-end="212">
+                                    <strong>Comando :</strong> <code>curl --location --request GET &quot;{{host_url}}/activity_manager/{{activity_manager_id}}/submit &quot; --header &quot;Authorization: Bearer {{jwt_token}}&quot;</code>
+                                </p>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+        <h2 class="code-line" data-line-start="213" data-line-end="214"><a id="Referncias_213"></a>Referências</h2>
+        <p class="has-line-data" data-line-start="215" data-line-end="217">
+            [1] O que é uma engine: <a href="https://en.wikipedia.org/wiki/Software_engine">https://en.wikipedia.org/wiki/Software_engine</a><br />
+            [2] O que é a ferramenta Flowbuild: <a href="https://flow-build.github.io/">https://flow-build.github.io/</a>
+        </p>
+    </body>
+</html>
