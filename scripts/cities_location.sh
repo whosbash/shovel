@@ -1,4 +1,5 @@
 #!/bin/bash
+# Credits to @sputnick-dev: https://github.com/sputnick-dev
 
 function convertDMStoDecimal() {
 	echo "$1" | awk -v FS="[ \t]" '{print $0,substr($1,length($1),1)substr($2,length($2),1)}' \
