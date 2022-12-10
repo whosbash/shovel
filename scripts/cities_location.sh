@@ -76,4 +76,4 @@ while read city; do
 	i="$(echo "$i+1" | bc)"
 done < "$to_csv_filename"
 
-rm -f BR_tmp.csv
+rm -f "$to_csv_filename"
