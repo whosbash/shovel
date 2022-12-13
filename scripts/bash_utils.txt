@@ -1,8 +1,0 @@
-# Echo filename
-for f in *; do 	
-	echo $filename; 
-done;
-
-# Setup keyboard to abnt2
-setxkbmap -model abnt2 -layout br
-
