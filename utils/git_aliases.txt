@@ -1,7 +1,7 @@
 [alias]
-    amend = !"git commit --amend -C HEAD"
+    amend = commit --amend
     st = status
-    ci = !git commit -m $@
+    ci = commit -m
     co = checkout
     br = branch
     l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
