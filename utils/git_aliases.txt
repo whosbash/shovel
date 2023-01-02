@@ -1,5 +1,6 @@
 [alias]
     amend = commit --amend
+    p = push -u origin HEAD
     st = status
     ci = commit -m
     co = checkout
