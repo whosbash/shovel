@@ -1,13 +1,32 @@
 [alias]
-    amend = commit --amend
-    up = contributors = !git pull && git p
+    # Fix some commit typo
+    fix = commit --amend
+    
+    # push commit with given message
+    up = !git ci $1 && git p
+
+    # Pull from upstream and push new changes
     pp = !git pull && git p
+    
+    # Push to upstream 
     p = push -u origin HEAD
+    
+    # Status
     st = status
+    
+    # Commit changes with message
     ci = commit -m
+    
+    # Check a branch out
     co = checkout
+
+    # List available branches
     br = branch
+    
+    # git branching in ASCII
     l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
+    
+    # git commit summary
     sm = log --summary
 
     # hard reset
