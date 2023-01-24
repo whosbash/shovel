@@ -3,7 +3,7 @@
     fix = commit --amend
     
     # push commit with given message
-    up = !git ci $1 && git p
+    up = "!git ci \"$1\" && git push"
 
     # Pull from upstream and push new changes
     pp = !git pull && git p
