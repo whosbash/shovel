@@ -6,3 +6,12 @@ done;
 # Setup keyboard to abnt2
 setxkbmap -model abnt2 -layout br
 
+# Searches for string "token" on current folder
+grep -rnw . -e "token"
+
+# substitutes string "token" by "other_token"
+find . \( ! -regex '.*/\..*' \) -type f | xargs sed -i 's/token/other_token/g'
+
+# replace double with single quotes
+find . \( ! -regex '.*/\..*' \) -type f | xargs sed -i "s/\"/\'/g"
+
