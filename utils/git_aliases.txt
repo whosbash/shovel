@@ -1,6 +1,7 @@
 [alias]
     amend = commit --amend
     up = contributors = !git pull && git p
+    pp = !git pull && git p
     p = push -u origin HEAD
     st = status
     ci = commit -m
