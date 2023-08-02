@@ -16,6 +16,9 @@
     
     # Commit changes with message
     ci = commit -m
+
+    # Commit changes with messageand push
+    cip = "!f() { git commit -m \"$@\" && git push -u origin HEAD; }; f"
     
     # Check a branch out
     co = checkout
