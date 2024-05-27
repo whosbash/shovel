@@ -16,6 +16,9 @@
     
     # Commit changes with message
     ci = commit -m
+
+    # Commit changes with messageand push
+    cip = "!f() { git commit -m \"$@\" && git push -u origin HEAD; }; f"
     
     # Check a branch out
     co = checkout
@@ -50,6 +53,8 @@
     # list contributor stats for this repo
     contributors = !git shortlog -n -s --no-merges $@ | cat - && echo && echo total $(git rev-list --count HEAD)
 
-     # decorated graph view of one liner summarized commits from all branches. (inspired by git-extras)
+    # decorated graph view of one liner summarized commits from all branches. (inspired by git-extras)
     tree = log --all --graph --decorate --oneline --simplify-by-decoration
 
+    # List big files greater than 50 MB
+    big = !git verify-pack -v .git/objects/pack/pack-*.idx | grep blob | awk '{print $3 " " $1}' | sort -nr | awk '$1 > 52428800 {print $1, $2}' | while read size hash; do echo $((size/1024/1024))MB $(git rev-list --objects --all | grep $hash | awk '{print $2}'); done
