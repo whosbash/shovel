@@ -84,27 +84,45 @@ install_jq() {
     fi
 }
 
-# Get Portainer token
-get_portainer_token() {
+# Function to check command success and variable presence
+check_command_success() {
+    local variable_value="$1"
+    local success_message="$2"
+    local failure_message="$3"
+    local step_number="$4"
+    local total_steps="$5"
+
+    if [ $? -eq 0 ] && [ -n "$variable_value" ]; then
+        echo "$step_number/$total_steps - [ OK ] - $success_message: $variable_value"
+    else
+        echo "$step_number/$total_steps - [ OFF ] - $failure_message"
+        exit 1
+    fi
+}
+
+# Function to attempt an API request with retries
+attempt_api_request() {
+    local url="$1"
+    local data="$2"
+    local token_key="$3"
     local attempt=1
     local max_attempts=5
-    local token=""
+    local response=""
 
-    while [ -z "$token" ] || [ "$token" == "null" ]; do
-        echo "Attempting to obtain Portainer token (Attempt $attempt/$max_attempts)..."
+    while [ -z "$response" ] || [ "$response" == "null" ]; do
+        echo "Attempting to connect to $url (Attempt $attempt/$max_attempts)..."
 
-        token=$(curl --fail -k -s -X POST \
+        response=$(curl --fail -k -s -X POST \
             -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USUARIO\",\"password\":\"$SENHA\"}" \
-            "https://$PORTAINER_URL/api/auth" | jq -r .jwt)
+            -d "$data" \
+            "$url" | jq -r "$token_key")
 
-        if [ -n "$token" ] && [ "$token" != "null" ]; then
-            echo "7/10 - [ OK ] - Obtained Portainer token"
+        if [ -n "$response" ] && [ "$response" != "null" ]; then
             break
         fi
 
         if [ $attempt -ge $max_attempts ]; then
-            echo "7/10 - [ OFF ] - Error: Failed to obtain token after $attempt attempts."
+            echo "Error: Failed to connect to $url after $attempt attempts."
             exit 1
         fi
 
@@ -112,37 +130,38 @@ get_portainer_token() {
         sleep 5
     done
 
+    echo "$response"
+}
+
+# Function to get Portainer token
+get_portainer_token() {
+    local url="https://$PORTAINER_URL/api/auth"
+    local data="{\"username\":\"$USUARIO\",\"password\":\"$SENHA\"}"
+    local token_key=".jwt"
+
+    local token=$(attempt_api_request "$url" "$data" "$token_key")
+    echo "7/10 - [ OK ] - Obtained Portainer token"
     echo "$token"
 }
 
-# Get Portainer endpoint ID
+# Example usage inside a function
 get_portainer_endpoint_id() {
     local endpoint_id=$(curl --fail -k -s -X GET -H "Authorization: Bearer $1" \
         "https://$PORTAINER_URL/api/endpoints" | jq -r '.[] | select(.Name == "primary") | .Id')
 
-    if [ $? -eq 0 ] && [ -n "$endpoint_id" ]; then
-        echo "8/10 - [ OK ] - Obtained Portainer ID: $endpoint_id"
-    else
-        echo "8/10 - [ OFF ] - Error obtaining Portainer ID"
-        exit 1
-    fi
+    check_command_success "$endpoint_id" "Obtained Portainer ID" "Error obtaining Portainer ID" 8 10
 
     echo "$endpoint_id"
 }
 
 # Get Swarm ID
-get_swarm_id() {
-    local swarm_id=$(curl --fail -k -s -X GET -H "Authorization: Bearer $1" \
-        "https://$PORTAINER_URL/api/endpoints/$2/docker/swarm" | jq -r .ID)
+get_portainer_endpoint_id() {
+    local endpoint_id=$(curl --fail -k -s -X GET -H "Authorization: Bearer $1" \
+        "https://$PORTAINER_URL/api/endpoints" | jq -r '.[] | select(.Name == "primary") | .Id')
 
-    if [ $? -eq 0 ] && [ -n "$swarm_id" ]; then
-        echo "9/10 - [ OK ] - Obtained Swarm ID: $swarm_id"
-    else
-        echo "9/10 - [ OFF ] - Error obtaining Swarm ID"
-        exit 1
-    fi
+    check_command_success "$endpoint_id" "Obtained Portainer ID" "Error obtaining Portainer ID" 8 10
 
-    echo "$swarm_id"
+    echo "$endpoint_id"
 }
 
 # Deploy stack
