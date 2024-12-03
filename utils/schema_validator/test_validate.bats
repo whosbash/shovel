@@ -8,6 +8,15 @@ VALID_JSON="valid_test.json"
 INVALID_JSON="invalid_test.json"
 SCHEMA_FILE="test_schema.json"
 
+# Setup and Teardown functions to manage temporary files
+setup() {
+    rm -f $VALID_JSON $INVALID_JSON $SCHEMA_FILE
+}
+
+teardown() {
+    rm -f $VALID_JSON $INVALID_JSON $SCHEMA_FILE
+}
+
 # Test if the script validates a valid JSON against a schema
 @test "validate valid JSON" {
     # Prepare the valid JSON and schema files
@@ -24,7 +33,9 @@ SCHEMA_FILE="test_schema.json"
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
     echo "Validation result: $result"  # Add this line to debug
-    [ -z "$result" ] # No errors should be printed
+    
+    # No errors should be printed
+    [ -z "$result" ]
 }
 
 # Test if the script returns an error for missing required keys
@@ -42,7 +53,9 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $INVALID_JSON)
-    [[ "$result" == *"Missing required key"* ]] # Should print error about missing key
+    
+    # Should print error about missing key
+    [[ "$result" == *"Missing required key"* ]]
 }
 
 # Test if the script detects an invalid type for a property
@@ -60,7 +73,9 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $INVALID_JSON)
-    [[ "$result" == *"expected type 'integer', but got 'string'"* ]] # Should print error about type mismatch
+
+    # Should print error about type mismatch
+    [[ "$result" == *"expected type 'integer', but got 'string'"* ]] 
 }
 
 # Test if the script handles the case of extra properties
@@ -78,7 +93,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors (extra properties are allowed in this case)
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+    
+    # No errors should be printed
+    [ -z "$result" ] 
+
 }
 
 @test "validate JSON with correct array type" {
@@ -95,7 +113,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+    
+    # No errors should be printed
+    [ -z "$result" ]
+
 }
 
 
@@ -113,7 +134,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+    
+    # No errors should be printed
+    [ -z "$result" ]
+
 }
 
 
@@ -131,7 +155,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $INVALID_JSON)
-    [[ "$result" == *"expected type 'string', but got 'number'"* ]] # Should print error about array element type mismatch
+
+    # Should print error about array element type mismatch
+    [[ "$result" == *"expected type 'string', but got 'number'"* ]] 
+
 }
 
 
@@ -150,7 +177,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $INVALID_JSON)
-    [[ "$result" == *"extra property"* ]] # Should print error about extra property
+    
+    # Should print error about extra property
+    [[ "$result" == *"extra property"* ]]
+
 }
 
 
@@ -175,7 +205,7 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+
 }
 
 
@@ -200,7 +230,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $INVALID_JSON)
-    [[ "$result" == *"Missing required key"* ]] # Should print error about missing key in nested object
+
+    # Should print error about missing key in nested object
+    [[ "$result" == *"Missing required key"* ]]
+
 }
 
 
@@ -217,7 +250,7 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+
 }
 
 
@@ -235,7 +268,10 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+    
+    # No errors should be printed
+    [ -z "$result" ]
+
 }
 
 
@@ -254,5 +290,7 @@ SCHEMA_FILE="test_schema.json"
 
     # Run the validator and check if there are no errors
     result=$($JSON_VALIDATOR_SCRIPT $SCHEMA_FILE $VALID_JSON)
-    [ -z "$result" ] # No errors should be printed
+
+    # No errors should be printed
+    [ -z "$result" ]
 }

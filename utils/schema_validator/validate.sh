@@ -18,7 +18,6 @@ validate_json_recursive() {
     for key in $required_keys; do
         if ! echo "$json" | jq -e ". | has(\"$key\")" >/dev/null; then
             errors+=("Missing required key: ${parent_path}${key}")
-            valid=false
         fi
     done
 
