@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+    n8n_{{ client_identifier }}:
+        image: n8nio/n8n:latest
+        container_name: n8n_{{ client_identifier }}
+        environment:
+            - DB_TYPE=postgresdb
+            - DB_POSTGRESDB_HOST=postgres
+            - DB_POSTGRESDB_PORT={{ postgres_port }}
+            - DB_POSTGRESDB_DATABASE=n8n_{{ client_identifier }}
+            - DB_POSTGRESDB_USER={{ postgres_user }}
+            - DB_POSTGRESDB_PASSWORD={{ postgres_password }}
+            - N8N_SECURE_COOKIE=false
+            - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+            - N8N_REINSTALL_MISSING_PACKAGES=true
+            - N8N_COMMUNITY_PACKAGES_ENABLED=true
+            - N8N_NODE_PATH=/home/node/.n8n/nodes
+            - N8N_BASIC_AUTH_ACTIVE=true
+            - N8N_BASIC_AUTH_USER={{ basic_auth_user }}
+            - N8N_BASIC_AUTH_PASSWORD={{ basic_auth_password }}
+            - N8N_PORT={{ client_port }}
+        ports:
+            - "{{ client_port }}:5678"
+        networks:
+            - "n8n_n8n-network"
+        volumes:
+            - n8n-data-{{ client_identifier }}:/home/node/.n8n
+
+volumes:
+  n8n-data-{{ client_identifier }}:
+
+networks:
+  n8n_n8n-network:
+    external: true
+    name: "n8n_n8n-network"
