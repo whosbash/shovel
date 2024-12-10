@@ -295,19 +295,18 @@ get_status_color() {
 # Function to get the style code based on the message type
 get_status_style() {
     case "$type" in
-        "success") echo "bold" ;; # Bold for success to indicate positivity
-        "info") echo "italic" ;; # Italic for informational messages
-        "error") echo "bold,italic" ;; # Bold and italic for errors to emphasize importance
-        "critical") echo "bold,underline" ;; # Bold and underline for critical to highlight severity
-        "warning") echo "underline" ;; # Underline for warnings to draw attention
-        "highlight") echo "bold,underline" ;; # Bold and underline for key points emphasis 
-        "wait") echo "dim,italic" ;; # Dim and italic for wait to indicate pending status
-        "important") echo "bold,underline,overline" ;; # Bold, underline, overline for messages
-        "question") echo "italic,underline" ;; # Italic and underline for questions to prompt input
-        *) echo "normal" ;; # Default to normal style for unknown types
+        "success") echo "bold" ;;                      # Bold for success
+        "info") echo "italic" ;;                       # Italic for informational messages
+        "error") echo "bold,italic" ;;                 # Bold and italic to emphasize importance
+        "critical") echo "bold,underline" ;;           # Bold and underline to highlight severity
+        "warning") echo "underline" ;;                 # Underline for warnings to draw attention
+        "highlight") echo "bold,underline" ;;          # Bold and underline to emphasize key points
+        "wait") echo "dim,italic" ;;                   # Dim and italic to indicate pending status
+        "important") echo "bold,underline,overline" ;; # Bold, underline, and overline to importance
+        "question") echo "italic,underline" ;;         # Italic and underline to prompt input
+        *) echo "normal" ;;                            # Default to normal style for unknown types
     esac
 }
-
 
 
 # Function to colorize a message based on its type
@@ -1134,6 +1133,32 @@ get_api_url(){
     echo "https://$url/api/$resource"
 }
 
+
+is_portainer_credentials_correct() {
+    local portainer_url="$1"
+    local username="$2"
+    local password="$3"
+
+    protocol="https"
+    content_type="application/json"
+    credentials="{\"username\":\"$username\",\"password\":\"$password\"}"
+    resource='auth'
+
+    url="$(get_api_url $protocol $portainer_url $resource)"
+
+    response=$(curl -k -s -X POST -H "Content-Type: $content_type" -d "$credentials" "$url")
+
+    # Check if the response contains a valid token
+    token=$(echo "$response" | jq -r .jwt)
+
+    if [[ "$token" == "null" || -z "$token" ]]; then
+        echo "Invalid credentials"
+        return 1  # Exit with status 1 for failure
+    else
+        echo "Valid credentials"
+        return 0  # Exit with status 0 for success
+    fi
+}
 
 # Function to retrieve a Portainer authentication token
 get_portainer_auth_token() {

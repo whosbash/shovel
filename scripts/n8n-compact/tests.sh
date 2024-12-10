@@ -49,7 +49,68 @@ declare -A STYLES=(
 )
 
 
-HAS_TIMESTAMP=true
+readonly HAS_TIMESTAMP=true
+readonly PADDING=3
+
+# Enable strict error handling and trap ERR to capture errors
+set -o errexit
+set -o pipefail
+set -o nounset
+trap 'handle_error $? $LINENO' ERR
+
+
+# Function to print a traceback (simulating stack trace)
+print_traceback() {
+    local i=0
+    while caller $i; do
+        ((i++))
+    done | awk '{print "  at " $2 " (line "$1")"}'
+}
+
+
+# Function to handle errors and generate error objects
+handle_error() {
+    local exit_code="$1"  # The exit code of the last command
+    local line_number="$2"  # The line number where the error occurred
+
+    # Get the command that caused the error
+    local last_command=$(history | tail -n 1 | sed 's/^ *[0-9]* *//')
+
+    # Generate a JSON error object
+    local error_object
+    error_object=$(jq -nc \
+        --arg cmd "$last_command" \
+        --arg line "$line_number" \
+        --arg exit_code "$exit_code" \
+        --arg script_name "$0" \
+        '{
+            script: $script_name,
+            command: $cmd,
+            line_number: $line,
+            exit_code: $exit_code,
+            timestamp: (now | todate)
+        }')
+
+    # Log the error object to a file
+    echo "$error_object" >> "error_log.json"
+
+    # Display a formatted error message
+    error "Error in script at line $line_number: '$last_command' (exit code: $exit_code)"
+    critical "Traceback (most recent call):"
+    print_traceback 
+    exit "$exit_code"
+}
+
+
+# Function to filter items based on the given filter function
+filter_items() {
+    local items="$1"   # The JSON array of items to filter
+    local filter_fn="$2"  # The jq filter to apply
+
+    # Apply the jq filter and return the filtered result as an array
+    filtered_items=$(echo "$items" | jq "[ $filter_fn ]")
+    echo "$filtered_items"
+}
 
 
 # Function to strip existing ANSI escape sequences (colors and styles) from a string
@@ -58,27 +119,11 @@ strip_ansi() {
 }
 
 
-# Function to decode Base64 to JSON
-decode_base64_to_json() {
-    local base64_data="$1"
-    echo -n "$base64_data" | base64 --decode
-}
-
-
 # Function to convert each element of a JSON array to base64
 convert_json_array_to_base64_array() {
     local json_array="$1"
     # Convert each element of the JSON array to base64 using jq
     echo "$json_array" | jq -r '.[] | @base64'
-}
-
-
-# Function to convert JSON to Base64
-convert_json_array_to_base64() {
-    local json_array="$1"
-    echo "$json_array" | jq -c '.[]' | while read -r line; do
-        echo "$line" | base64
-    done
 }
 
 
@@ -149,16 +194,16 @@ get_status_color() {
 # Function to get the style code based on the message type
 get_status_style() {
     case "$type" in
-        "success") echo "bold" ;;                           # Bold for success to indicate positivity
-        "info") echo "italic" ;;                            # Italic for informational messages
-        "error") echo "bold,italic" ;;                      # Bold and italic for errors to emphasize importance
-        "critical") echo "bold,underline" ;;                # Bold and underline for critical to highlight severity
-        "warning") echo "underline" ;;                      # Underline for warnings to draw attention
-        "highlight") echo "bold,underline" ;;               # Bold and underline for highlights to emphasize key points
-        "wait") echo "dim,italic" ;;                        # Dim and italic for wait to indicate pending status
-        "important") echo "bold,underline,overline" ;;      # Bold, underline, and overline for important messages
-        "question") echo "italic,underline" ;;              # Italic and underline for questions to prompt input
-        *) echo "normal" ;;                                 # Default to normal style for unknown types
+        "success") echo "bold" ;;                      # Bold for success
+        "info") echo "italic" ;;                       # Italic for informational messages
+        "error") echo "bold,italic" ;;                 # Bold and italic to emphasize importance
+        "critical") echo "bold,underline" ;;           # Bold and underline to highlight severity
+        "warning") echo "underline" ;;                 # Underline for warnings to draw attention
+        "highlight") echo "bold,underline" ;;          # Bold and underline to emphasize key points
+        "wait") echo "dim,italic" ;;                   # Dim and italic to indicate pending status
+        "important") echo "bold,underline,overline" ;; # Bold, underline, and overline to importance
+        "question") echo "italic,underline" ;;         # Italic and underline to prompt input
+        *) echo "normal" ;;                            # Default to normal style for unknown types
     esac
 }
 
@@ -299,33 +344,62 @@ trim() {
 }
 
 
-query_64json() {
+# Example of safe input usage
+query_json64() {
     local item="$1"
     local field="$2"
-    echo "$item" | base64 --decode | jq -r "$field"
+    echo "$item" | base64 --decode | jq -r "$field" || {
+        error "Invalid JSON or base64 input!"
+        return 1
+    }
 }
 
 
-# Function to validate the value (can be customized)
-validate_value() {
-    local value="$1"
-    local validator="$2"
-    local name="$3"
-    
-    # If no validator is provided, consider it valid
-    if [[ -z "$validator" ]]; then
-        return 0
+# Function to add JSON objects or arrays
+add_json_objects() {
+    local json1="$1"  # First JSON input
+    local json2="$2"  # Second JSON input
+
+    # Get the types of the input JSON values
+    local type1
+    local type2
+    type1=$(echo "$json1" | jq -e type 2>/dev/null | tr -d '"')
+    type2=$(echo "$json2" | jq -e type 2>/dev/null | tr -d '"')
+
+    # Check if both types were captured successfully
+    if [ -z "$type1" ] || [ -z "$type2" ]; then
+        echo "Error: One or both inputs are invalid JSON."
+        return 1
     fi
 
-    # Call the validation function dynamically
-    if ! "$validator" "$value"; then
-        error_message="The value '$value' is invalid for '$name'."
-        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "${FUNCNAME[0]}")
-        error_array+=("$error_obj")
-        return 1  # Validation failed
-    fi
+    # Perform different operations based on the types of inputs
+    local merged
+    case "$type1-$type2" in
+        object-object)
+            # Merge the two JSON objects
+            merged=$(jq -sc '.[0] * .[1]' <<<"$json1"$'\n'"$json2")
+            ;;
+        object-array)
+            # Append the object to the array
+            merged=$(jq -c '. + [$json1]' --argjson json1 "$json1" <<<"$json2")
+            ;;
+        array-object)
+            # Append the object to the array
+            merged=$(jq -c '. + [$json2]' --argjson json2 "$json2" <<<"$json1")
+            ;;
+        array-array)
+            # Concatenate the two arrays
+            merged=$(jq -sc '.[0] + .[1]' <<<"$json1"$'\n'"$json2")
+            ;;
+        *)
+            # Unsupported combination
+            error "Unsupported JSON types. Please provide valid JSON objects or arrays."
+            return 1
+            ;;
+    esac
 
-    return 0  # Validation passed
+    # Output the merged result
+    echo "$merged"
 }
 
 
@@ -339,134 +413,6 @@ validate_name_value() {
     else
         return 1  # Invalid
     fi
-}
-
-
-# Function to validate a name
-validate_variable_name() {
-    local name="$1"
-
-    # Regex pattern:
-    if [[ "$name" =~ ^[a-zA-Z0-9]([a-zA-Z0-9_.-]*[a-zA-Z0-9])?$ ]] && \
-        ! [[ "$name" =~ (--|\.\.|__) ]]; then
-        return 0  # Valid name
-    else
-        # Display the error message in a list format
-        echo -e "Error: Invalid name '$name'."
-        echo -e "Naming rules:"
-        echo -e "\t1. Only letters, numbers, hyphens (-), underscores (_), and dots (.) are allowed."
-        echo -e "\t2. The name must start and end with a letter or number."
-        echo -e "\t3. Consecutive special characters (__, --, ..) are not allowed."
-        echo -e "\t4. Names cannot exceed 255 characters."
-        return 1  # Invalid name
-    fi
-}
-
-
-# Function to create a collection item
-create_collection_item() {
-    local name="$1"
-    local label="$2"
-    local description="$3"
-    local value="$4"
-    local required="$5"
-    local validate_fn="$6"
-
-    # Check if the item is required and the value is empty
-    if [[ "$required" == "yes" && -z "$value" ]]; then
-        error_message="The value for '$name' is required but is empty."
-        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "${FUNCNAME[0]}")
-        echo "$error_obj"
-        return 1
-    fi
-
-    # Validate the value using the provided validation function
-    if ! validate_value "$value" "$validate_fn" "$name"; then
-        # Capture the message returned by the validator
-        error_message="$message"
-        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "$validate_fn")
-        echo "$error_obj"
-        return 1
-    fi
-
-    # Build the JSON object by echoing the data and piping it to jq for proper escaping
-    item_json=$(echo "
-    {
-        \"name\": \"$name\",
-        \"label\": \"$label\",
-        \"description\": \"$description\",
-        \"value\": \"$value\",
-        \"required\": \"$required\"
-    }" | jq .)
-
-    # Check if jq creation was successful
-    if [[ $? -ne 0 ]]; then
-        echo "Error: Failed to create JSON object"
-        return 1  # Return an error code
-    fi
-
-    # Return the JSON object
-    echo "$item_json"
-}
-
-
-# Example validation function for a specific pattern
-validate_name_value() {
-    local value="$1"
-
-    # Example: Validate that the value contains only letters and numbers
-    if [[ "$value" =~ ^[a-zA-Z0-9]+$ ]]; then
-        return 0  # Valid
-    else
-        return 1  # Invalid
-    fi
-}
-
-# Function to convert associative array to JSON format
-convert_array_to_json() {
-    # Use reference to the associative array
-    local -n dict=$1  
-    json_output="{"
-    
-    for key in "${!dict[@]}"; do
-        value="${dict[$key]}"
-        json_output+="\"$key\": \"$value\", "
-    done
-    
-    # Remove trailing comma if present
-    json_output="${json_output%, }"
-    json_output+="}"
-    
-    echo "$json_output"
-}
-
-
-# Function to convert each element of a JSON array to base64
-convert_json_to_base64() {
-    local json_array="$1"
-    # Convert each element of the JSON array to base64 using jq
-    echo "$json_array" | jq -r '.[] | @base64'
-}
-
-
-# Function to create an error object with traceback
-# Function to create an error object with traceback
-create_error_object() {
-    local name="$1"
-    local message="$2"
-    local line_number="$3"
-    local func_name="$4"
-    
-    # Create a JSON object representing the error with traceback information
-    error_object=$(echo "
-    {
-        \"name\": \"$name\",
-        \"message\": \"$message\",
-        \"line\": \"$line_number\",
-        \"function\": \"$func_name\"
-    }" | jq .)
-
-    echo "$error_object"
 }
 
 
@@ -486,33 +432,61 @@ validate_value() {
 }
 
 
+# Function to display each error item with custom formatting
+display_error_items() {
+    local error_items="$1"  # JSON array of error objects
+
+    # Parse and iterate over each error item in the JSON array
+    echo "$error_items" | \
+    jq -r '.[] | "\(.name): \(.message) (Function: \(.function))"' | \
+    while IFS= read -r error_item; do
+        # Display the error item using the existing error function
+        error "$error_item"
+    done
+}
+
+
+# Function to create an error object with traceback
+create_error_item() {
+    local name="$1"
+    local message="$2"
+    local func_name="$3"
+    
+    # Create a JSON object representing the error with traceback information
+    error_object=$(echo "
+    {
+        \"name\": \"$name\",
+        \"message\": \"$message\",
+        \"function\": \"$func_name\"
+    }" | jq .)
+
+    echo "$error_object"
+}
+
+
 # Function to create a collection item
-create_collection_item() {
+create_prompt_item() {
     local name="$1"
     local label="$2"
     local description="$3"
     local value="$4"
     local required="$5"
-    local validate_fn="$6"  # Optional: Validation function name
-
-    # Initialize an empty error array
-    error_array=()
+    local validate_fn="$6"
 
     # Check if the item is required and the value is empty
     if [[ "$required" == "yes" && -z "$value" ]]; then
         error_message="The value for '$name' is required but is empty."
-        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "${FUNCNAME[0]}")
-        error_array+=("$error_obj")
+        error_obj=$(create_error_item "$name" "$error_message" "${FUNCNAME[0]}")
+        echo "$error_obj"
+        return 1
     fi
 
     # Validate the value using the provided validation function
     if ! validate_value "$value" "$validate_fn" "$name"; then
-        return 1  # Return an error code if validation fails
-    fi
-
-    # If there are any errors, return them as a JSON array
-    if [[ ${#error_array[@]} -gt 0 ]]; then
-        echo "[ ${error_array[@]} ]"
+        # Capture the message returned by the validator
+        error_message="$message"
+        error_obj=$(create_error_item "$name" "$error_message" "$LINENO" "$validate_fn")
+        echo "$error_obj"
         return 1
     fi
 
@@ -536,134 +510,95 @@ create_collection_item() {
     echo "$item_json"
 }
 
-# Example validation function for a specific pattern
-validate_name_value() {
-    local value="$1"
 
-    # Validate that the value contains only letters and numbers (no spaces allowed)
-    if [[ "$value" =~ ^[a-zA-Z0-9]+$ ]]; then
-        return 0  # Valid
-    else
-        echo "Error: '$value' is invalid. It must contain only letters and numbers."
-        return 1  # Invalid
-    fi
-}
-
-
-# Function to prompt for user input and return the result
+# Function to prompt for user input
 prompt_for_input() {
-    local item="$1"      # Base64-encoded JSON item
-    
-    local value=""        # User input value
-    local requirement=""  # Input requirement (required or optional)
-    
-    local name=""         # Name extracted from the item
-    local description=""  # Description extracted from the item
-    local required=""     # Whether the input is required or optional
+    local item="$1"
 
-    # Decode the base64-encoded item and extract fields using jq
-    name=$(query_64json "$item" '.name')
-    description=$(query_64json "$item" '.description')
-    required=$(query_64json "$item" '.required')
+    name=$(query_json64 "$item" '.name')
+    label=$(query_json64 "$item" '.label')
+    description=$(query_json64 "$item" '.description')
+    required=$(query_json64 "$item" '.required')
 
-    # Determine whether the input is required or optional
+    # Assign the 'required' label based on the 'required' field value
     if [[ "$required" == "yes" ]]; then
-        requirement="required"
+        required_label="required"
     else
-        requirement="optional"
+        required_label="optional"
     fi
 
-    # Generate the prompt message with formatting
-    prompt="Prompting variable $name ($requirement): $description\nEnter a value or type 'q' to quit: "
-    
-    # Format the prompt message using your format_message function
-    fmt_prompt="$(format_message 'question' "$prompt")"
+    local general_info="Prompting $required_label variable $name: $description"
+    local explanation="Enter a value or type 'q' to quit"
+    local prompt="$general_info\n$explanation: "
+    fmt_prompt=$(format_message 'question' "$prompt")
 
     while true; do
-        # Read the user input
         read -rp "$fmt_prompt" value
-
-        # Return exit signal
         if [[ "$value" == "q" ]]; then
-            echo "q"  # Return exit signal instead of terminating the script
+            echo "q"
             return
         fi
 
-        # Validate input if required
         if [[ -n "$value" || "$required" == "no" ]]; then
-            break  # User input is valid, break the loop
+            echo "$value"
+            return
         else
-            warning "$name is required. Please enter a value."
+            warning "$label is a required field. Please enter a value."
         fi
     done
-
-    # Return only the user input, not the prompt message
-    echo "$value"
 }
 
 
-# Collect and validate the prompt information with error tracking
+# Function to collect and validate information
 collect_prompt_info() {
-    # Initialize an empty JSON array and error tracking array
+    local items="$1"
     json_array="[]"
-    validation_errors=""
 
-    # Loop through each item in the JSON array using jq
-    for item in $(convert_json_array_to_base64_array "$1"); do
-        # Decode the base64 item to extract necessary fields
-        decoded_item=$(echo "$item" | base64 --decode)
-        name=$(echo "$decoded_item" | jq -r '.name')
-        label=$(echo "$decoded_item" | jq -r '.label')
-        description=$(echo "$decoded_item" | jq -r '.description')
-        required=$(echo "$decoded_item" | jq -r '.required')
-        validate_fn=$(echo "$decoded_item" | jq -r '.validate_fn')  # Assume validation function is stored in JSON
-        
-        # Collect input based on the item
+    for item in $(convert_json_array_to_base64_array "$items"); do
         value=$(prompt_for_input "$item")
-
-        # If the user typed "exit", return an empty JSON array and exit
         if [[ "$value" == "q" ]]; then
             echo "[]"
-            return 0  # Exit function immediately with empty array
+            return 0
         fi
 
-        # Validate the value
-        if ! validate_value "$value" "$validate_fn" "$name"; then
-            validation_errors="$validation_errors$name: $message\n"
-            continue  # Skip this field for now, we'll modify it later
-        fi
+        json_object=$(create_prompt_item \
+            "$(query_json64 "$item" '.name')" \
+            "$(query_json64 "$item" '.label')" \
+            "$(query_json64 "$item" '.description')" \
+            "$value" \
+            "$(query_json64 "$item" '.required')" \
+            "$(query_json64 "$item" '.validate_fn')"
+        )
 
-        # Create a JSON object with name, description, required, and the user input value
-        json_object=$(create_collection_item "$name" "$label" "$description" "$value" "$required" "$validate_fn")
-
-        # Add the new object to the JSON array
         json_array=$(echo "$json_array" | jq ". += [$json_object]")
     done
 
-    # Output the final JSON array with all items and any validation errors
-    if [[ -n "$validation_errors" ]]; then
-        echo "Validation Errors: $validation_errors"
-    fi
     echo "$json_array"
 }
 
 
-# Confirmation and modification function with error tracking
 confirm_and_modify_prompt_info() {
     local json_array="$1"
-    local validation_errors="$2"
 
     while true; do
         # Display collected information to stderr (for terminal)
         info "Provided values: "
-        echo "$json_array" | jq -r '.[] | "\(.name): \(.value)"' | while IFS= read -r line; do
-            info "\t$line"
-        done
+        # Calculate the maximum length of the '.name' field and add padding
+        max_length=$(\
+            echo "$json_array" | \
+            jq -r '.[] | .name' | \
+            awk '{ print length }' | \
+            sort -nr | head -n1 \
+        )
 
-        # Display validation errors, if any
-        if [[ -n "$validation_errors" ]]; then
-            echo "Validation Errors: $validation_errors"
-        fi
+        formatted_length=$((max_length + PADDING))
+
+        # Display the collected information with normalized name length
+        echo "$json_array" | \
+        jq -r '.[] | "\(.name): \(.value)"' | \
+        while IFS=: read -r name value; do
+            printf "  %-*s: %s\n" "$formatted_length" "$name" "$value"
+        done
 
         # Ask for confirmation (stderr)
         options="y to confirm, n to modify, or q to quit"
@@ -722,65 +657,66 @@ confirm_and_modify_prompt_info() {
     done
 }
 
-# New Function to Combine the Process
+
+
+
+# Function to collect and validate information, then re-trigger collection for errors
 run_collection_process() {
-    local items="$1"  # Accept items array as input
+    local items="$1"
+    local all_collected_info="[]"
+    local has_errors=true
 
-    collected_info_and_errors=$(collect_prompt_info "$items")
+    # Keep collecting and re-requesting info for errors
+    while [[ "$has_errors" == true ]]; do
+        collected_info="$(collect_prompt_info "$items")"
 
-    # If no values were collected, exit early
-    if [[ "$collected_info_and_errors" == "[]" ]]; then
-        echo "[]"
-        exit 0
-    fi
+        # If no values were collected, exit early
+        if [[ "$collected_info" == "[]" ]]; then
+            exit 0
+        fi
 
-    # Separate collected JSON and validation errors
-    collected_info=$(echo "$collected_info_and_errors" | jq 'select(type == "array")')
-    validation_errors=$(echo "$collected_info_and_errors" | jq 'select(type == "string")')
+        # Define the filter functions in jq format
+        labels='.name and .label and .description and .value and .required'
+        collection_item_filter=".[] | select($labels)"
+        error_item_filter='.[] | select(.message and .function)'
 
-    confirm_and_modify_prompt_info "$collected_info" "$validation_errors"
+        # Separate valid collection items and error objects
+        valid_items=$(filter_items "$collected_info" "$collection_item_filter")
+        error_items=$(filter_items "$collected_info" "$error_item_filter")
+
+        # Ensure valid JSON formatting by stripping any unwanted characters
+        valid_items_json=$(echo "$valid_items" | jq -c .)
+        all_collected_info_json=$(echo "$all_collected_info" | jq -c .)
+
+        # Merge valid items with previously collected information
+        all_collected_info=$(add_json_objects "$all_collected_info" "$valid_items")
+
+        # Step 1: Extract the names of items with errors from error_items
+        error_names=$(echo "$error_items" | jq -r '.[].name' | jq -R . | jq -s .)
+
+        # Step 2: Filter the original items to keep only those whose names match the error items
+        items_with_errors=$(\
+            echo "$items" | \
+            jq --argjson error_names "$error_names" \
+            '[.[] | select(.name as $item_name | $error_names | index($item_name))]'
+        )
+
+        # Check if there are still errors left
+        if [[ "$(echo "$error_items" | jq 'length')" -eq 0 ]]; then
+            has_errors=false
+        else
+            # If there are still errors, re-trigger the collection process for error items only
+            warning "Re-collecting information for items with errors..."
+            display_error_items "$error_items"
+
+            items="$items_with_errors"
+        fi
+    done
+
+    # Return all collected and validated information
+    confirm_and_modify_prompt_info "$all_collected_info"
 }
 
-# Mock a validation function that will simulate invalid or valid input
-mock_validation_fn() {
-    local value="$1"
-    local name="$2"
-    
-    # Simulate a validation rule: if the value contains 'error', it's invalid
-    if [[ "$value" == *"error"* ]]; then
-        message="Invalid input: $name contains 'error'."
-        return 1
-    fi
-    
-    return 0
-}
-
-# Function to base64-encode JSON (simulating input items)
-base64_encode_item() {
-    local name="$1"
-    local label="$2"
-    local description="$3"
-    local required="$4"
-    local validate_fn="$5"
-    
-    # Construct the JSON item
-    json_item=$(jq -n \
-        --arg name "$name" \
-        --arg label "$label" \
-        --arg description "$description" \
-        --arg required "$required" \
-        --arg validate_fn "$validate_fn" \
-        '{
-            name: $name,
-            label: $label,
-            description: $description,
-            required: $required,
-            validate_fn: $validate_fn
-        }')
-
-    # Base64 encode the JSON item
-    echo "$json_item" | base64
-}
 
 # Simulate the collection process
 items='[
@@ -788,13 +724,15 @@ items='[
         "name": "server_name",
         "label": "Server Name",
         "description": "The name of the server", 
-        "required": "yes" 
-    }, 
+        "required": "yes",
+        "validate_fn": "validate_name_value"
+    },
     { 
         "name": "network_name", 
         "label": "Network Name", 
         "description": "The name of the network for Docker stack", 
-        "required": "yes"
+        "required": "yes",
+        "validate_fn": "validate_name_value"
     }
 ]'
 
