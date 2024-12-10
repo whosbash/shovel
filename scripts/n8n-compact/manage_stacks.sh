@@ -61,15 +61,6 @@ DEFAULT_NETWORK="swarm_network"
 DEFAULT_TYPE='info'
 
 
-# Declare arrays for stack labels (user-friendly) and stack names (internal)
-declare -a stack_labels=("Redis" "Postgres" "n8n")
-declare -a stack_names=("redis" "postgres" "n8n")
-declare -a stack_descriptions=(
-    "A powerful in-memory data structure store used as a database, cache, and message broker."
-    "A relational database management system emphasizing extensibility and SQL compliance."
-    "A workflow automation tool that allows you to automate tasks and integrate various services."
-)
-
 ########################################## END OF CONSTANTS ########################################
 
 ################################ BEGIN OF GENERAL UTILITARY FUNCTIONS ##############################
@@ -542,6 +533,74 @@ convert_json_array_to_base64_array() {
     local json_array="$1"
     # Convert each element of the JSON array to base64 using jq
     echo "$json_array" | jq -r '.[] | @base64'
+}
+
+
+# Function to validate the value (can be customized)
+validate_value() {
+    local value="$1"
+    local validator="$2"
+    local name="$3"
+    
+    # If no validator is provided, consider it valid
+    if [[ -z "$validator" ]]; then
+        return 0
+    fi
+
+    # Call the validation function dynamically
+    message="$("$validator" "$value")"  # Capture the message returned by the validator
+    if [[ $? -ne 0 ]]; then
+        return 1  # Return 1 if the validation fails, indicating failure
+    fi
+
+    return 0  # Validation passed
+}
+
+
+# Function to create a collection item
+create_collection_item() {
+    local name="$1"
+    local label="$2"
+    local description="$3"
+    local value="$4"
+    local required="$5"
+    local validate_fn="$6"
+
+    # Check if the item is required and the value is empty
+    if [[ "$required" == "yes" && -z "$value" ]]; then
+        error_message="The value for '$name' is required but is empty."
+        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "${FUNCNAME[0]}")
+        echo "$error_obj"
+        return 1
+    fi
+
+    # Validate the value using the provided validation function
+    if ! validate_value "$value" "$validate_fn" "$name"; then
+        # Capture the message returned by the validator
+        error_message="$message"
+        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "$validate_fn")
+        echo "$error_obj"
+        return 1
+    fi
+
+    # Build the JSON object by echoing the data and piping it to jq for proper escaping
+    item_json=$(echo "
+    {
+        \"name\": \"$name\",
+        \"label\": \"$label\",
+        \"description\": \"$description\",
+        \"value\": \"$value\",
+        \"required\": \"$required\"
+    }" | jq .)
+
+    # Check if jq creation was successful
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to create JSON object"
+        return 1  # Return an error code
+    fi
+
+    # Return the JSON object
+    echo "$item_json"
 }
 
 
@@ -2896,7 +2955,7 @@ deploy_stack() {
 # Function to display a great farewell message
 farewell_message() {
     highlight ""
-    highlight "🌟 Thank you for using the Stack Deployment Tool! 🌟"
+    highlight "🌟 Thank you for using the Deployment Tool OpenStack! 🌟"
     highlight ""
     highlight "Your journey doesn't end here:it's just a new beginning."
     highlight "Remember: Success is the sum of small efforts, repeated day in and day out. 🚀"
@@ -2908,6 +2967,16 @@ farewell_message() {
 
 # Function to choose which stack to install interactively
 choose_stack_to_install() {
+    # Declare arrays for stack labels (user-friendly) and stack names (internal)
+    declare -a stack_labels=("Redis" "Postgres" "N8N")
+    declare -a stack_names=("redis" "postgres" "n8n")
+    declare -a stack_descriptions=(
+        "A powerful in-memory data structure store used as a database, cache, and message broker."
+        "A relational database management system emphasizing extensibility and SQL compliance."
+        "A workflow automation tool that allows you to automate tasks and integrate various services."
+    )
+
+
     highlight "Select the stack to install:"
     highlight ""
 
@@ -3025,12 +3094,13 @@ main() {
         clean_docker_environment
     fi
 
+    if [[ $STARTUP == true ]]; then
+        initialize_server_info
+    fi
+
     if [[ $PREPARE == true ]]; then
         update_and_install_packages
         clean_docker_environment
-    fi
-
-    if [[ $STARTUP == true ]]; then
         initialize_server_info
     fi
     
