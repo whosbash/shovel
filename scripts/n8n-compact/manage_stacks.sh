@@ -2811,37 +2811,14 @@ get_ip_collection_item() {
 }
 
 
-# Function to retrieve the server network names
-get_server_network_names(){
-    # Define the server and network collection initial configuration
-    items='[
-        { 
-            "name": "server_name",
-            "label": "Server Name",
-            "description": "The name of the server", 
-            "required": "yes" 
-        }, 
-        { 
-            "name": "network_name", 
-            "label": "Network Name", 
-            "description": "The name of the network for Docker stack", 
-            "required": "yes"
-        }
-    ]'
-
-    # Confirm and modify information
-    run_collection_process "$items"
-}
-
-
 # Function to merge server, network, and IP information
 get_server_info() {
     local server_array ip_object merged_result
 
     # Get the server and network information
-    server_array="$(get_server_network_names)"
+    server_array="$(prompt_server_info)"
     if [[ "$server_array" == "[]" ]]; then
-        echo "Error: Unable to retrieve the server network names."
+        echo "Error: Unable to retrieve server and network names."
         exit 1
     fi
 
@@ -2862,56 +2839,42 @@ get_server_info() {
 }
 
 
-# Function to set the server hostname
-set_hostname() {
-    local server_name="$1"
-    step_message="Set Hostname"
-    step_info 1 $total_steps "$step_message"
-    hostnamectl set-hostname "$server_name" > /dev/null 2>&1
-    handle_exit $? 1 $total_steps "$step_message"
-}
-
-
-# Function to update /etc/hosts with the server name
-update_hosts_file() {
-    local server_name="$1"
-    step_message="Add name to server in hosts file at path /etc/hosts"
-    step_info 2 $total_steps "$step_message"
-    sed -i "s/127.0.0.1[[:space:]]localhost/127.0.0.1 $server_name/g" /etc/hosts > /dev/null 2>&1
-    handle_exit $? 2 $total_steps "$step_message"
-}
-
-
-# Function to initialize Docker Swarm if not active
-initialize_docker_swarm() {
-    step_message="Docker Swarm initialization"
-    step_info 3 $total_steps "$step_message"
-    if docker info 2>&1 | grep -q 'Swarm: active'; then
-        step_warning 3 $total_steps "$step_message"
-    else
-        docker swarm init --advertise-addr "$(get_ip)" > /dev/null 2>&1
-        handle_exit $? 3 $total_steps "$step_message"
-    fi
-}
-
-
 # Function to initialize the server information
 initialize_server_info(){
     total_steps=5
 
-    # Confirm and modify information
-    server_info_json=$(get_server_info)
+    # Step 1: Check if server_info.json exists and is valid
+    if [[ -f "server_info.json" ]]; then
+        server_info_json=$(cat server_info.json 2>/dev/null)
+        if jq -e . >/dev/null 2>&1 <<<"$server_info_json"; then
+            info "Valid server_info.json found. Using existing information."
+        else
+            warning "server_info.json is invalid. Reinitializing..."
+            server_info_json=$(get_server_info)
+        fi
+    else
+        info "server_info.json not found. Retrieving server information..."
+        server_info_json=$(get_server_info)
 
-    # Step 4: Save the server information to a JSON file
-    echo "$server_info_json" > server_info.json
-    info "Server information saved to server_info.json"
+        # Save the server information to a JSON file
+        cat "$server_info_json" > server_info.json
+        info "Server information saved to server_info.json"
+    fi
 
-    # Step 5: Set Hostname
+    # Extract server_name and network_name
+    server_name=$(echo "$server_info_json" | jq -r '.[0].server_name')
+    network_name=$(echo "$server_info_json" | jq -r '.[0].network_name')
+    if [[ -z "$server_name" || -z "$network_name" ]]; then
+        echo "Error: Missing server_name or network_name in server_info.json"
+        exit 1
+    fi
+
+    # Set Hostname
     step_message="Set Hostname"
     step_info 1 $total_steps "$step_message"
     hostnamectl set-hostname "$server_name" > /dev/null 2>&1
     handle_exit $? 1 $total_steps "$step_message"
-
+    
     # Step 6: Update /etc/hosts
     step_message="Add name to server in hosts file at path /etc/hosts"
     step_info 2 $total_steps "$step_message"
@@ -2924,11 +2887,10 @@ initialize_server_info(){
     if docker info 2>&1 | grep -q 'Swarm: active'; then
         step_warning 3 $total_steps "$step_message"
     else
-        docker swarm init --advertise-addr "$server_ip" > /dev/null 2>&1
+        docker swarm init --advertise-addr "$(get_ip)" > /dev/null 2>&1
         handle_exit $? 3 $total_steps "$step_message"
     fi
 }
-
 
 
 # Function to deploy the selected stack based on input
@@ -3114,10 +3076,10 @@ main() {
     fi
 }
 
-## Call the main function
-#main "$@"
+# Call the main function
+main "$@"
 
-get_server_network_names
+
 
 # username="conexxohub_portainer" 
 # password="ConexxoHub!54321" 
