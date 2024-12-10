@@ -2927,7 +2927,6 @@ farewell_message() {
 }
 
 
-# Function to choose which stack to install interactively
 choose_stack_to_install() {
     # Declare arrays for stack labels (user-friendly) and stack names (internal)
     declare -a stack_labels=("Redis" "Postgres" "N8N")
@@ -2938,54 +2937,85 @@ choose_stack_to_install() {
         "A workflow automation tool that allows you to automate tasks and integrate various services."
     )
 
+    # Constants for pagination
+    local items_per_page=2
+    local total_items=${#stack_labels[@]}
+    local total_pages=$(( (total_items + items_per_page - 1) / items_per_page )) # Round up
+    local current_page=1
 
-    highlight "Select the stack to install:"
-    highlight ""
+    # If total items fit within one page, disable pagination
+    if (( total_items <= items_per_page )); then
+        total_pages=1
+    fi
 
-    # Determine the maximum length of stack labels for proper alignment
-    max_label_length=0
-    for label in "${stack_labels[@]}"; do
-        label_length=${#label}
-        if (( label_length > max_label_length )); then
-            max_label_length=$label_length
+    while true; do
+        clear
+        if (( total_pages > 1 )); then
+            highlight "Select the stack to install (Page $current_page of $total_pages):"
+        else
+            highlight "Select the stack to install:"
+        fi
+        highlight ""
+
+        # Calculate start and end indices for the current page
+        local start_index=$(( (current_page - 1) * items_per_page ))
+        local end_index=$(( start_index + items_per_page - 1 ))
+        if (( end_index >= total_items )); then
+            end_index=$(( total_items - 1 ))
+        fi
+
+        # Display the items for the current page
+        for i in $(seq "$start_index" "$end_index"); do
+            local label_with_padding=$(printf "%-10s" "${stack_labels[i]}")
+            local option="$((i + 1)). $label_with_padding: ${stack_descriptions[i]}"
+            highlight "$option"
+        done
+
+        # Navigation options
+        if (( total_pages > 1 )); then
+            local navigation_options="[P] Previous Page [N] Next Page [E] Exit"
+            highlight ""
+            highlight "$navigation_options"
+        else
+            highlight ""
+            highlight "[E] Exit"
+        fi
+
+        # Read user input
+        local choice_message="$(format_message "highlight" "Enter your choice: ")"
+        read -p "$choice_message" choice
+
+        # Handle navigation and selection
+        if [[ "$choice" =~ ^[0-9]+$ ]]; then
+            if (( choice >= 1 && choice <= total_items )); then
+                local selected_stack_name="${stack_names[$((choice - 1))]}"
+                deploy_stack "$selected_stack_name"
+                return
+            else
+                error "Invalid choice. Please try again."
+            fi
+        elif (( total_pages > 1 )) && [[ "$choice" == "P" || "$choice" == "p" ]]; then
+            if (( current_page > 1 )); then
+                current_page=$((current_page - 1))
+            else
+                current_page=$total_pages  # Wrap to the last page
+            fi
+        elif (( total_pages > 1 )) && [[ "$choice" == "N" || "$choice" == "n" ]]; then
+            if (( current_page < total_pages )); then
+                current_page=$((current_page + 1))
+            else
+                current_page=1  # Wrap to the first page
+            fi
+        elif [[ "$choice" == "E" || "$choice" == "e" ]]; then
+            farewell_message
+            exit 0
+        else
+            error "Invalid input. Please try again."
         fi
     done
-
-    # Loop through the stack labels and display both name and description, with normalized spacing
-    local padding_length=2
-    for i in "${!stack_labels[@]}"; do
-        # Calculate padding based on the longest label
-        padding=$((max_label_length - ${#stack_labels[i]}))
-        
-        # Use printf to format the stack label and description with consistent spacing
-        label_with_padding=$(printf "%-${max_label_length}s" "${stack_labels[i]}")
-
-        description="${stack_descriptions[i]}"
-        stack_name="$label_with_padding$(printf "%-${padding_length}s" "")"
-        option="$((i + 1)). $stack_name: $description"
-        highlight 
-    done
-
-    # Add an option to exit
-    highlight "$(( ${#stack_labels[@]} + 1 )). Exit"
-
-    # Read user input
-    highlight ""
-    choice_message="$(format_message "highlight" "Enter your choice: ")"
-    read -p "$choice_message" choice
-
-    # Validate the choice and deploy the selected stack
-    if [[ "$choice" -ge 1 && "$choice" -le "${#stack_labels[@]}" ]]; then
-        local selected_stack_name="${stack_names[$((choice - 1))]}"
-        deploy_stack "$selected_stack_name"
-    elif [[ "$choice" -eq "$(( ${#stack_labels[@]} + 1 ))" ]]; then
-        farewell_message
-        exit 0
-    else
-        error "Invalid choice. Please try again."
-        choose_stack_to_install  # Call the function recursively to retry
-    fi
 }
+
+
 
 
 # Display help message
@@ -3078,8 +3108,6 @@ main() {
 
 # Call the main function
 main "$@"
-
-
 
 # username="conexxohub_portainer" 
 # password="ConexxoHub!54321" 
