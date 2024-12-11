@@ -355,6 +355,15 @@ query_json64() {
 }
 
 
+# Function to handle empty collections and avoid exiting prematurely
+handle_empty_collection() {
+    if [[ "$1" == "[]" ]]; then
+        echo "No data collected. Exiting process."
+        exit 0
+    fi
+}
+
+
 # Function to add JSON objects or arrays
 add_json_objects() {
     local json1="$1"  # First JSON input
@@ -403,32 +412,31 @@ add_json_objects() {
 }
 
 
-# Example validation function for a specific pattern
-validate_name_value() {
-    local value="$1"
+# Function to sort array1 based on the order of names in array2 using a specified key
+sort_array_by_order() {
+  local array1="$1"
+  local order="$2"
+  local key="$3"
 
-    # Example: Validate that the value contains only letters and numbers
-    if [[ "$value" =~ ^[a-zA-Z0-9]+$ ]]; then
-        return 0  # Valid
-    else
-        return 1  # Invalid
-    fi
+  echo "$array1" | jq --argjson order "$order" --arg key "$key" '
+    map( .[$key] as $name | {item: ., index: ( $order | index($name) // length) } ) |
+    sort_by(.index) | map(.item)
+  '
 }
 
 
-# Function to validate the input and return errors for invalid fields
-validate_value() {
-    local value="$1"
-    local validate_fn="$2"
-    local name="$3"
+# Function to extract values based on a key
+extract_values(){
+    echo "$1" | jq -r "map(.$2)"
+}
 
-    # Assume validate_fn is a function name and execute it
-    $validate_fn "$value"
-    if [[ $? -ne 0 ]]; then
-        message="Invalid value for '$name'"
-        return 1
-    fi
-    return 0
+
+sort_array_according_to_other_array(){
+    local array1="$1"
+    local array2="$2"
+    local key="$3"
+    order="$(extract_values "$array2" "$key")"
+    echo "$(sort_array_by_order "$array1" "$order" "$key")"
 }
 
 
@@ -445,22 +453,55 @@ display_error_items() {
     done
 }
 
+# The validation function
+validate_name_value() {
+    local value="$1"
+    if [[ "$value" =~ [^a-zA-Z0-9] ]]; then  # Checks if there is any non-alphanumeric character
+        echo "The value '$value' should contain only letters and numbers."
+        return 1
+    fi
+    return 0
+}
 
-# Function to create an error object with traceback
+
+# Function to validate the input and return errors for invalid fields
+validate_value() {
+    local value="$1"
+    local validate_fn="$2"
+
+    # Capture the output from the validation function
+    error_message=$($validate_fn "$value")
+
+    # Check the return code of the validation function
+    if [[ $? -ne 0 ]]; then
+        # If validation failed, capture and print the error message
+        echo "$error_message"
+        return 1
+    fi
+    return 0
+}
+
+
 create_error_item() {
     local name="$1"
     local message="$2"
-    local func_name="$3"
-    
-    # Create a JSON object representing the error with traceback information
-    error_object=$(echo "
-    {
-        \"name\": \"$name\",
-        \"message\": \"$message\",
-        \"function\": \"$func_name\"
-    }" | jq .)
+    local validate_fn="$3"
 
-    echo "$error_object"
+    # Escape the message for jq
+    local escaped_message
+    escaped_message=$(printf '%s' "$message" | jq -R .)
+
+    # Create the error object using jq
+    jq -n --arg name "$name" \
+          --arg value "$value" \
+          --arg message "$escaped_message" \
+          --arg validate_fn "$validate_fn" \
+          '{
+              name: $name,
+              message: ($message | fromjson),
+              value: $value,
+              function: $validate_fn
+          }'
 }
 
 
@@ -482,13 +523,15 @@ create_prompt_item() {
     fi
 
     # Validate the value using the provided validation function
-    if ! validate_value "$value" "$validate_fn" "$name"; then
-        # Capture the message returned by the validator
-        error_message="$message"
-        error_obj=$(create_error_item "$name" "$error_message" "$LINENO" "$validate_fn")
+    validation_output=$(validate_value "$value" "$validate_fn" 2>&1)
+
+    # If validation failed, capture the validation message
+    if [[ $? -ne 0 ]]; then
+        # Validation failed, use the validation message captured in validation_output
+        error_obj=$(create_error_item "$name" "$validation_output" "$validate_fn")
         echo "$error_obj"
         return 1
-    fi
+    fi  
 
     # Build the JSON object by echoing the data and piping it to jq for proper escaping
     item_json=$(echo "
@@ -509,6 +552,7 @@ create_prompt_item() {
     # Return the JSON object
     echo "$item_json"
 }
+
 
 
 # Function to prompt for user input
@@ -597,7 +641,7 @@ confirm_and_modify_prompt_info() {
         echo "$json_array" | \
         jq -r '.[] | "\(.name): \(.value)"' | \
         while IFS=: read -r name value; do
-            printf "  %-*s: %s\n" "$formatted_length" "$name" "$value"
+            printf "  %-*s: %s\n" "$formatted_length" "$name" "$value" >&2
         done
 
         # Ask for confirmation (stderr)
@@ -630,7 +674,7 @@ confirm_and_modify_prompt_info() {
 
             if [[ -n "$current_value" ]]; then
                 info "Current value for $field_to_modify: $current_value"
-                
+
                 new_value_query="$(format_message "question" "Enter new value: ")"
                 read -rp "$new_value_query" new_value
                 if [[ -n "$new_value" ]]; then
@@ -658,8 +702,6 @@ confirm_and_modify_prompt_info() {
 }
 
 
-
-
 # Function to collect and validate information, then re-trigger collection for errors
 run_collection_process() {
     local items="$1"
@@ -671,9 +713,7 @@ run_collection_process() {
         collected_info="$(collect_prompt_info "$items")"
 
         # If no values were collected, exit early
-        if [[ "$collected_info" == "[]" ]]; then
-            exit 0
-        fi
+        handle_empty_collection "$collected_info"
 
         # Define the filter functions in jq format
         labels='.name and .label and .description and .value and .required'
@@ -713,8 +753,13 @@ run_collection_process() {
         fi
     done
 
+    # Step to sort the collected information by the original order (using 'name' for sorting)
+    all_collected_info="$(sort_array_according_to_other_array "$all_collected_info" "$items" "name")"
+
     # Return all collected and validated information
-    confirm_and_modify_prompt_info "$all_collected_info"
+    confirmed_info="$(confirm_and_modify_prompt_info "$all_collected_info")"
+
+    echo "$confirmed_info"
 }
 
 
@@ -737,4 +782,15 @@ items='[
 ]'
 
 # Run the function
+name="server_name"
+label="Server Name"
+description="The name of the server"
+value="a b"
+required="yes"
+validate_fn="validate_name_value"
+
 run_collection_process "$items"
+
+
+# # Test the validation function with invalid input
+# echo "$(validate_value "a b" 'validate_name_value')"

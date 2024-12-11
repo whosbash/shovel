@@ -548,59 +548,14 @@ validate_value() {
     fi
 
     # Call the validation function dynamically
-    message="$("$validator" "$value")"  # Capture the message returned by the validator
+    message="$("$validator" "$value")"
     if [[ $? -ne 0 ]]; then
-        return 1  # Return 1 if the validation fails, indicating failure
-    fi
-
-    return 0  # Validation passed
-}
-
-
-# Function to create a collection item
-create_collection_item() {
-    local name="$1"
-    local label="$2"
-    local description="$3"
-    local value="$4"
-    local required="$5"
-    local validate_fn="$6"
-
-    # Check if the item is required and the value is empty
-    if [[ "$required" == "yes" && -z "$value" ]]; then
-        error_message="The value for '$name' is required but is empty."
-        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "${FUNCNAME[0]}")
-        echo "$error_obj"
+        echo "$message"
+        
+        # Return 1 if the validation fails, indicating failure
         return 1
     fi
-
-    # Validate the value using the provided validation function
-    if ! validate_value "$value" "$validate_fn" "$name"; then
-        # Capture the message returned by the validator
-        error_message="$message"
-        error_obj=$(create_error_object "$name" "$error_message" "$LINENO" "$validate_fn")
-        echo "$error_obj"
-        return 1
-    fi
-
-    # Build the JSON object by echoing the data and piping it to jq for proper escaping
-    item_json=$(echo "
-    {
-        \"name\": \"$name\",
-        \"label\": \"$label\",
-        \"description\": \"$description\",
-        \"value\": \"$value\",
-        \"required\": \"$required\"
-    }" | jq .)
-
-    # Check if jq creation was successful
-    if [[ $? -ne 0 ]]; then
-        echo "Error: Failed to create JSON object"
-        return 1  # Return an error code
-    fi
-
-    # Return the JSON object
-    echo "$item_json"
+    return 0
 }
 
 
