@@ -365,7 +365,6 @@ handle_empty_collection() {
 
 
 # Function to add JSON objects or arrays
-
 add_json_objects() {
     local json1="$1"  # First JSON input
     local json2="$2"  # Second JSON input
@@ -468,7 +467,7 @@ display_error_items() {
 
     # Parse and iterate over each error item in the JSON array
     echo "$error_items" | \
-    jq -r '.[] | "\(.name): \(.message) (Function: \(.function))"' | \
+    jq -r '.[] | "\(.name): \(.message) (\(.line_number): \(.function))"' | \
     while IFS= read -r error_item; do
         # Display the error item using the existing error function
         error "$error_item"
@@ -476,23 +475,51 @@ display_error_items() {
 }
 
 
+# Function to validate name values with extensive checks
 validate_name_value() {
     local value="$1"
 
     # Check if the name starts with a number
     if [[ "$value" =~ ^[0-9] ]]; then
         echo "The value '$value' should not start with a number."
+        echo "Explanation: The value must start with a letter."
         return 1
     fi
 
     # Check if the name contains invalid characters
     if [[ ! "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9@#\&*_-]*$ ]]; then
-        criterium="Only letters, numbers, and '@', '#', '&', '*', '_', '-' are allowed."
+        criterium="Only letters, numbers, and the characters '@', '#', '&', '*', '_', '-' are allowed."
         error_message="The value '$value' contains invalid characters."
         echo "$error_message $criterium"
         return 1
     fi
 
+    # Check if the name is too short (less than 3 characters)
+    if (( ${#value} < 3 )); then
+        echo "The value '$value' is too short. It must be at least 3 characters long."
+        return 1
+    fi
+
+    # Check if the name is too long (more than 50 characters)
+    if (( ${#value} > 50 )); then
+        echo "The value '$value' is too long. It must be at most 50 characters long."
+        return 1
+    fi
+
+    # Check for spaces in the name
+    if [[ "$value" =~ [[:space:]] ]]; then
+        echo "The value '$value' contains spaces. Spaces are not allowed."
+        return 1
+    fi
+
+    # Check if the name starts or ends with a special character
+    if [[ "$value" =~ ^[^\w] || "$value" =~ [^\w]$ ]]; then
+        echo "The value '$value' should not start or end with a special character."
+        return 1
+    fi
+
+    # If all validations pass
+    echo "The value '$value' is valid."
     return 0
 }
 
@@ -548,6 +575,37 @@ validate_port_availability() {
 }
 
 
+find_next_available_port() {
+    local trigger_port="$1"
+    local current_port="$trigger_port"
+
+    # Check if the trigger port is valid
+    validate_port_availability "$current_port" > /dev/null 2>&1
+    if [[ $? -eq 0 ]]; then
+        # Return the trigger port if it's available
+        echo "$current_port"
+        return 0
+    fi
+
+    # If trigger port is in use, try subsequent ports
+    while true; do
+        ((current_port++))  # Increment the port number
+
+        # Ensure the port number stays within the valid range (1-65535)
+        if (( current_port > 65535 )); then
+            echo "No available ports found in the valid range."
+            return 1
+        fi
+
+        # Check if the current port is available
+        validate_port_availability "$current_port"
+        if [[ $? -eq 0 ]]; then
+            echo "$current_port"  # Return the first available port
+            return 0
+        fi
+    done
+}
+
 
 # Function to validate the input and return errors for invalid fields
 validate_value() {
@@ -573,6 +631,11 @@ create_error_item() {
     local message="$2"
     local validate_fn="$3"
 
+    # Find the line number of the function definition by parsing the current script
+    local line_number
+    pattern="^[[:space:]]*(function[[:space:]]+|)[[:space:]]*$validate_fn[[:space:]]*\(\)"
+    line_number=$(grep -n -E "$pattern" "$BASH_SOURCE" | cut -d: -f1)
+
     # Escape the message for jq
     local escaped_message
     escaped_message=$(printf '%s' "$message" | jq -R .)
@@ -582,11 +645,13 @@ create_error_item() {
     --arg name "$name" \
     --arg value "$value" \
     --arg message "$escaped_message" \
+    --arg line_number "$line_number" \
     --arg validate_fn "$validate_fn" \
     '{
         name: $name,
         message: ($message | fromjson),
         value: $value,
+        line_number: $line_number,
         function: $validate_fn
     }'
 }
@@ -899,29 +964,7 @@ items='[
 ]'
 
 # Run the function
-name="server_name"
-label="Server Name"
-description="The name of the server"
-value="a b"
-required="yes"
-validate_fn="validate_name_value"
+run_collection_process "$items"
 
-#run_collection_process "$items"
-success "Hello"
-error "Hello"
-warning "Hello"
-info "Hello"
-highlight "Hello"
-debug "Hello"
-critical "Hello"
-note "Hello"
-important "Hello"
-wait "Hello"
-question "Hello"
-celebrate "Hello"
-progress "Hello"
-failure "Hello"
-tip "Hello"
-
-# # Test the validation function with invalid input
-# echo "$(validate_value "a b" 'validate_name_value')"
+# Test the validation function with invalid input
+#echo "$(validate_name_value 'a b' 'validate_name_value')"
