@@ -151,61 +151,76 @@ colorize() {
 }
 
 
-# Function to display a step with improved formatting
 get_status_icon() {
     local type="$1"
 
     case "$type" in
-        "success") echo "✅" ;;         # Success icon
-        "error") echo "❌" ;;           # Error icon
-        "warning") echo "⚠️" ;;         # Warning icon
-        "info") echo "📖" ;;            # Info icon
-        "highlight") echo "✨" ;;       # Highlight icon
-        "debug") echo "🐞" ;;           # Debug icon
-        "critical") echo "🚨" ;;        # Critical icon
-        "note") echo "📝" ;;            # Note icon
-        "important") echo "⚡" ;;       # Important icon
-        "wait") echo "⏳" ;;            # Highlight icon
-        "question") echo "❓" ;;        # Question icon
-        *) echo "🔵" ;;                 # Default icon (e.g., ongoing step)
+        "success") echo "🌟" ;;         # Bright star for success
+        "error") echo "🔥" ;;           # Fire icon for error
+        "warning") echo "⚡" ;;         # Lightning for warning
+        "info") echo "💡" ;;            # Light bulb for info
+        "highlight") echo "🌈" ;;       # Rainbow for highlight
+        "debug") echo "🔍" ;;           # Magnifying glass for debug
+        "critical") echo "💀" ;;        # Skull for critical
+        "note") echo "📌" ;;            # Pushpin for note
+        "important") echo "🚀" ;;       # Rocket for important
+        "wait") echo "⌛" ;;            # Hourglass for waiting
+        "question") echo "🤔" ;;        # Thinking face for question
+        "celebrate") echo "🎉" ;;       # Party popper for celebration
+        "progress") echo "📈" ;;        # Upwards chart for progress
+        "failure") echo "💔" ;;         # Broken heart for failure
+        "tip") echo "🍀" ;;             # Four-leaf clover for additional success
+        *) echo "🌀" ;;                 # Cyclone for undefined type
     esac
 }
 
 
 # Function to get the color code based on the message type
 get_status_color() {
+    local type="$1"
+
     case "$type" in
-        "success") echo "green" ;;
-        "error") echo "red" ;;
-        "warning") echo "yellow" ;;
-        "info") echo "white" ;;
-        "highlight") echo "cyan" ;;
-        "debug") echo "blue" ;;
-        "critical") echo "magenta" ;;
-        "note") echo "gray" ;;
-        "important") echo "orange" ;;
-        "wait") echo "white" ;;
-        "question") echo "purple" ;;
-        *) echo "white" ;;  # Default to white for unknown types
+        "success") echo "green" ;;       # Green for success
+        "error") echo "red" ;;           # Red for error
+        "warning") echo "yellow" ;;      # Yellow for warning
+        "info") echo "white" ;;          # White for info
+        "highlight") echo "cyan" ;;      # Cyan for highlight
+        "debug") echo "blue" ;;          # Blue for debug
+        "critical") echo "magenta" ;;    # Magenta for critical
+        "note") echo "gray" ;;           # Gray for note
+        "important") echo "orange" ;;    # Orange for important
+        "wait") echo "white" ;;          # White for waiting
+        "question") echo "purple" ;;     # Purple for question
+        "celebrate") echo "green" ;;     # Green for celebration
+        "progress") echo "blue" ;;       # Blue for progress
+        "failure") echo "red" ;;         # Red for failure
+        "tip") echo "green" ;;           # Green for tips
+        *) echo "white" ;;               # Default to white for unknown types
     esac
 }
-
 
 # Function to get the style code based on the message type
 get_status_style() {
+    local type="$1"
+
     case "$type" in
         "success") echo "bold" ;;                      # Bold for success
-        "info") echo "italic" ;;                       # Italic for informational messages
-        "error") echo "bold,italic" ;;                 # Bold and italic to emphasize importance
-        "critical") echo "bold,underline" ;;           # Bold and underline to highlight severity
-        "warning") echo "underline" ;;                 # Underline for warnings to draw attention
-        "highlight") echo "bold,underline" ;;          # Bold and underline to emphasize key points
-        "wait") echo "dim,italic" ;;                   # Dim and italic to indicate pending status
-        "important") echo "bold,underline,overline" ;; # Bold, underline, and overline to importance
-        "question") echo "italic,underline" ;;         # Italic and underline to prompt input
+        "info") echo "italic" ;;                       # Italic for info
+        "error") echo "bold,italic" ;;                 # Bold and italic for errors
+        "critical") echo "bold,underline" ;;           # Bold and underline for critical
+        "warning") echo "underline" ;;                 # Underline for warnings
+        "highlight") echo "bold,underline" ;;          # Bold and underline for highlights
+        "wait") echo "dim,italic" ;;                   # Dim and italic for pending
+        "important") echo "bold,underline,overline" ;; # Bold, underline, and overline for important
+        "question") echo "italic,underline" ;;         # Italic and underline for questions
+        "celebrate") echo "bold" ;;                    # Bold for celebration
+        "progress") echo "italic" ;;                   # Italic for progress
+        "failure") echo "bold,italic" ;;               # Bold and italic for failure
+        "tip") echo "bold,italic" ;;                   # Bold and italic for tips
         *) echo "normal" ;;                            # Default to normal style for unknown types
     esac
 }
+
 
 
 # Function to colorize a message based on its type
@@ -338,6 +353,38 @@ question() {
     local message="$1"                      # Step message
     local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
     echo_message 'question' "$message" $timestamp >&2
+}
+
+
+# Function to display celebrate formatted messages
+celebrate() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'celebrate' "$message" $timestamp >&2
+}
+
+
+# Function to display progress formatted messages
+progress() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'progress' "$message" $timestamp >&2
+}
+
+
+# Function to display failure formatted messages
+failure() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'failure' "$message" $timestamp >&2
+}
+
+
+# Function to display tip formatted messages
+tip() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'tip' "$message" $timestamp >&2
 }
 
 
