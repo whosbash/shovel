@@ -217,7 +217,6 @@ colorize_by_type() {
 }
 
 
-# General function to format and display messages with optional timestamp, color, and icon
 format_message() {
     local type="$1"                             # Message type (success, error, etc.)
     local text="$2"                             # Message text
@@ -228,15 +227,19 @@ format_message() {
     icon=$(get_status_icon "$type")
 
     # Add timestamp if enabled
-    local formatted_message="$text"
+    local timestamp=""
     if [ "$has_timestamp" = true ]; then
-        formatted_message="[$(date '+%Y-%m-%d %H:%M:%S')] $formatted_message"
+        timestamp="[$(date '+%Y-%m-%d %H:%M:%S')] "
+        # Only colorize the timestamp
+        timestamp="$(colorize "$timestamp" "$(get_status_color "$type")" "normal")"
     fi
 
-    colorized_message="$(colorize_by_type "$type" "$formatted_message")"
+    # Colorize the main message
+    local colorized_message
+    colorized_message="$(colorize_by_type "$type" "$text")"
 
-    # Display the message with icon, color, style, and timestamp (if enabled)
-    echo -e "$icon $colorized_message"
+    # Display the message with icon, timestamp, and colorized message
+    echo -e "$icon $timestamp$colorized_message"
 }
 
 
@@ -358,7 +361,7 @@ query_json64() {
 # Function to handle empty collections and avoid exiting prematurely
 handle_empty_collection() {
     if [[ "$1" == "[]" ]]; then
-        echo "No data collected. Exiting process."
+        warning "No data collected. Exiting process."
         exit 0
     fi
 }
@@ -414,14 +417,14 @@ add_json_objects() {
 
 # Function to sort array1 based on the order of names in array2 using a specified key
 sort_array_by_order() {
-  local array1="$1"
-  local order="$2"
-  local key="$3"
+    local array1="$1"
+    local order="$2"
+    local key="$3"
 
-  echo "$array1" | jq --argjson order "$order" --arg key "$key" '
+    echo "$array1" | jq --argjson order "$order" --arg key "$key" '
     map( .[$key] as $name | {item: ., index: ( $order | index($name) // length) } ) |
     sort_by(.index) | map(.item)
-  '
+    '
 }
 
 
@@ -453,15 +456,28 @@ display_error_items() {
     done
 }
 
-# The validation function
+
 validate_name_value() {
     local value="$1"
-    if [[ "$value" =~ [^a-zA-Z0-9] ]]; then  # Checks if there is any non-alphanumeric character
-        echo "The value '$value' should contain only letters and numbers."
+
+    # Check if the name starts with a number
+    if [[ "$value" =~ ^[0-9] ]]; then
+        echo "The value '$value' should not start with a number."
         return 1
     fi
+
+    # Check if the name contains invalid characters
+    if [[ ! "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9@#\&*_-]*$ ]]; then
+        criterium="Only letters, numbers, and '@', '#', '&', '*', '_', '-' are allowed."
+        error_message="The value '$value' contains invalid characters."
+        echo "$error_message $criterium"
+        return 1
+    fi
+
     return 0
 }
+
+
 
 
 # Function to validate the input and return errors for invalid fields
