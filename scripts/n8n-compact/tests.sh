@@ -48,58 +48,8 @@ declare -A STYLES=(
     [reset]="\e[0m"
 )
 
-
 readonly HAS_TIMESTAMP=true
 readonly PADDING=3
-
-# Enable strict error handling and trap ERR to capture errors
-set -o errexit
-set -o pipefail
-set -o nounset
-trap 'handle_error $? $LINENO' ERR
-
-
-# Function to print a traceback (simulating stack trace)
-print_traceback() {
-    local i=0
-    while caller $i; do
-        ((i++))
-    done | awk '{print "  at " $2 " (line "$1")"}'
-}
-
-
-# Function to handle errors and generate error objects
-handle_error() {
-    local exit_code="$1"  # The exit code of the last command
-    local line_number="$2"  # The line number where the error occurred
-
-    # Get the command that caused the error
-    local last_command=$(history | tail -n 1 | sed 's/^ *[0-9]* *//')
-
-    # Generate a JSON error object
-    local error_object
-    error_object=$(jq -nc \
-        --arg cmd "$last_command" \
-        --arg line "$line_number" \
-        --arg exit_code "$exit_code" \
-        --arg script_name "$0" \
-        '{
-            script: $script_name,
-            command: $cmd,
-            line_number: $line,
-            exit_code: $exit_code,
-            timestamp: (now | todate)
-        }')
-
-    # Log the error object to a file
-    echo "$error_object" >> "error_log.json"
-
-    # Display a formatted error message
-    error "Error in script at line $line_number: '$last_command' (exit code: $exit_code)"
-    critical "Traceback (most recent call):"
-    print_traceback 
-    exit "$exit_code"
-}
 
 
 # Function to filter items based on the given filter function
@@ -157,13 +107,13 @@ get_status_icon() {
     case "$type" in
         "success") echo "🌟" ;;         # Bright star for success
         "error") echo "🔥" ;;           # Fire icon for error
-        "warning") echo "⚡" ;;         # Lightning for warning
+        "warning") echo "⚠️" ;;         # Lightning for warning
         "info") echo "💡" ;;            # Light bulb for info
         "highlight") echo "🌈" ;;       # Rainbow for highlight
         "debug") echo "🔍" ;;           # Magnifying glass for debug
         "critical") echo "💀" ;;        # Skull for critical
         "note") echo "📌" ;;            # Pushpin for note
-        "important") echo "🚀" ;;       # Rocket for important
+        "important") echo "⚡" ;;       # Rocket for important
         "wait") echo "⌛" ;;            # Hourglass for waiting
         "question") echo "🤔" ;;        # Thinking face for question
         "celebrate") echo "🎉" ;;       # Party popper for celebration
@@ -181,20 +131,20 @@ get_status_color() {
 
     case "$type" in
         "success") echo "green" ;;       # Green for success
-        "error") echo "red" ;;           # Red for error
+        "error") echo "light_red" ;;     # Light Red for error
         "warning") echo "yellow" ;;      # Yellow for warning
-        "info") echo "white" ;;          # White for info
+        "info") echo "teal" ;;          # White for info
         "highlight") echo "cyan" ;;      # Cyan for highlight
         "debug") echo "blue" ;;          # Blue for debug
-        "critical") echo "magenta" ;;    # Magenta for critical
-        "note") echo "gray" ;;           # Gray for note
-        "important") echo "orange" ;;    # Orange for important
-        "wait") echo "white" ;;          # White for waiting
+        "critical") echo "light_magenta" ;;    # Light Magenta for critical
+        "note") echo "pink" ;;           # Gray for note
+        "important") echo "gold" ;;    # Orange for important
+        "wait") echo "light_yellow" ;;   # Light Yellow for waiting
         "question") echo "purple" ;;     # Purple for question
         "celebrate") echo "green" ;;     # Green for celebration
-        "progress") echo "blue" ;;       # Blue for progress
-        "failure") echo "red" ;;         # Red for failure
-        "tip") echo "green" ;;           # Green for tips
+        "progress") echo "lime" ;;       # Blue for progress
+        "failure") echo "light_red" ;;         # Red for failure
+        "tip") echo "light_cyan" ;;     # Light Green for tips
         *) echo "white" ;;               # Default to white for unknown types
     esac
 }
@@ -211,7 +161,7 @@ get_status_style() {
         "warning") echo "underline" ;;                 # Underline for warnings
         "highlight") echo "bold,underline" ;;          # Bold and underline for highlights
         "wait") echo "dim,italic" ;;                   # Dim and italic for pending
-        "important") echo "bold,underline,overline" ;; # Bold, underline, and overline for important
+        "important") echo "bold,underline,overline" ;; # Bold, underline, overline for important
         "question") echo "italic,underline" ;;         # Italic and underline for questions
         "celebrate") echo "bold" ;;                    # Bold for celebration
         "progress") echo "italic" ;;                   # Italic for progress
@@ -220,7 +170,6 @@ get_status_style() {
         *) echo "normal" ;;                            # Default to normal style for unknown types
     esac
 }
-
 
 
 # Function to colorize a message based on its type
@@ -259,6 +208,7 @@ format_message() {
 
 
 # Function to display a message with improved formatting
+
 echo_message() {
     local type="$1"
     local text="$2"
@@ -415,6 +365,7 @@ handle_empty_collection() {
 
 
 # Function to add JSON objects or arrays
+
 add_json_objects() {
     local json1="$1"  # First JSON input
     local json2="$2"  # Second JSON input
@@ -480,6 +431,27 @@ extract_values(){
     echo "$1" | jq -r "map(.$2)"
 }
 
+# Function to extract a specific field from a JSON array
+extract_field() {
+    local json="$1"
+    local field="$2"
+    echo "$json" | jq -r ".[].$field"
+}
+
+# Function to filter items based on a field value match
+filter_items_by_name() {
+    local json="$1"
+    local name="$2"
+    echo "$json" | jq -c --arg name "$name" '[.[] | select(.name == $name)]'
+}
+
+# Function to add a JSON object to an array
+append_to_json_array() {
+    local json_array="$1"
+    local json_object="$2"
+    echo "$json_array" | jq ". += [$json_object]"
+}
+
 
 sort_array_according_to_other_array(){
     local array1="$1"
@@ -525,6 +497,56 @@ validate_name_value() {
 }
 
 
+validate_email_value() {
+    local value="$1"
+
+    # Check if the value matches an email pattern
+    if [[ ! "$value" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        echo "The value '$value' is not a valid email address."
+        return 1
+    fi
+
+    return 0
+}
+
+
+validate_integer_value() {
+    local value="$1"
+
+    # Check if the value is an integer (allow negative and positive integers)
+    if [[ ! "$value" =~ ^-?[0-9]+$ ]]; then
+        echo "The value '$value' is not a valid integer."
+        return 1
+    fi
+
+    return 0
+}
+
+
+validate_port_availability() {
+    local port="$1"
+
+    # Check if the port is a valid number between 1 and 65535
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+        echo "The value '$port' is not a valid port number. Port numbers must be between 1 and 65535."
+        return 1
+    fi
+
+    # Use netcat (nc) to check if the port is open on localhost
+    # The -z flag checks if the port is open (without sending data)
+    # The -w1 flag specifies a timeout of 1 second
+    nc -z -w1 127.0.0.1 "$port" 2>/dev/null
+
+    # Check the result of the netcat command
+    if [[ $? -eq 0 ]]; then
+        echo "The port '$port' is already in use."
+        return 1
+    else
+        echo "The port '$port' is available."
+        return 0
+    fi
+}
+
 
 
 # Function to validate the input and return errors for invalid fields
@@ -545,6 +567,7 @@ validate_value() {
 }
 
 
+# Function to create a error item
 create_error_item() {
     local name="$1"
     local message="$2"
@@ -555,16 +578,17 @@ create_error_item() {
     escaped_message=$(printf '%s' "$message" | jq -R .)
 
     # Create the error object using jq
-    jq -n --arg name "$name" \
-          --arg value "$value" \
-          --arg message "$escaped_message" \
-          --arg validate_fn "$validate_fn" \
-          '{
-              name: $name,
-              message: ($message | fromjson),
-              value: $value,
-              function: $validate_fn
-          }'
+    jq -n \
+    --arg name "$name" \
+    --arg value "$value" \
+    --arg message "$escaped_message" \
+    --arg validate_fn "$validate_fn" \
+    '{
+        name: $name,
+        message: ($message | fromjson),
+        value: $value,
+        function: $validate_fn
+    }'
 }
 
 
@@ -603,7 +627,8 @@ create_prompt_item() {
         \"label\": \"$label\",
         \"description\": \"$description\",
         \"value\": \"$value\",
-        \"required\": \"$required\"
+        \"required\": \"$required\",
+        \"validate_fn\": \"$validate_fn\"
     }" | jq .)
 
     # Check if jq creation was successful
@@ -615,7 +640,6 @@ create_prompt_item() {
     # Return the JSON object
     echo "$item_json"
 }
-
 
 
 # Function to prompt for user input
@@ -677,7 +701,7 @@ collect_prompt_info() {
             "$(query_json64 "$item" '.validate_fn')"
         )
 
-        json_array=$(echo "$json_array" | jq ". += [$json_object]")
+        json_array=$(append_to_json_array "$json_array" "$json_object")
     done
 
     echo "$json_array"
@@ -690,7 +714,6 @@ confirm_and_modify_prompt_info() {
     while true; do
         # Display collected information to stderr (for terminal)
         info "Provided values: "
-        # Calculate the maximum length of the '.name' field and add padding
         max_length=$(\
             echo "$json_array" | \
             jq -r '.[] | .name' | \
@@ -716,7 +739,26 @@ confirm_and_modify_prompt_info() {
 
         case "$confirmation" in
         y)
-            # Output the final JSON to stdout (for file capture)
+            # Validate the confirmed data before returning
+            for item in $(echo "$json_array" | jq -r '.[] | @base64'); do
+                _jq() {
+                    echo "$item" | base64 --decode | jq -r "$1"
+                }
+
+                value=$(_jq '.value')
+                validate_fn=$(_jq '.validate_fn')
+
+                # Call validate_value function (ensure you have this function implemented)
+                validation_output=$(validate_value "$value" "$validate_fn" 2>&1)
+
+                if [[ $? -ne 0 ]]; then
+                    warning "Validation failed for '$value': $validation_output"
+                    echo "$json_array" | jq -r ".[] | select(.value == \"$value\")"
+                    continue  # Continue looping to re-modify the invalid value
+                fi
+            done
+
+            # If no validation failed, output the final JSON to stdout (for file capture)
             echo "$json_array"
             break
             ;;
@@ -740,13 +782,24 @@ confirm_and_modify_prompt_info() {
 
                 new_value_query="$(format_message "question" "Enter new value: ")"
                 read -rp "$new_value_query" new_value
+
                 if [[ -n "$new_value" ]]; then
+                    # Validate new value
+                    validate_fn=$(echo "$json_array" | jq -r ".[] | select(.name == \"$field_to_modify\") | .validate_fn")
+                    validation_output=$(validate_value "$new_value" "$validate_fn" 2>&1)
+
+                    if [[ $? -ne 0 ]]; then
+                        warning "Validation failed for '$new_value': $validation_output"
+                        continue
+                    fi
+
                     # Modify the JSON by updating the value of the specified field
-                    json_array=$(
-                        echo "$json_array" | 
-                        jq --arg field "$field_to_modify" --arg value "$new_value" \
-                        '(.[] | select(.name == $field) | .value) = $value | .'
-                    )
+                    json_array=$(\
+                        echo "$json_array" | \
+                        jq \
+                            --arg field "$field_to_modify" \
+                            --arg value "$new_value" \
+                            '(.[] | select(.name == $field) | .value) = $value')
                 else
                     error "Value cannot be empty."
                 fi
@@ -763,6 +816,7 @@ confirm_and_modify_prompt_info() {
         esac
     done
 }
+
 
 
 # Function to collect and validate information, then re-trigger collection for errors
@@ -795,7 +849,7 @@ run_collection_process() {
         all_collected_info=$(add_json_objects "$all_collected_info" "$valid_items")
 
         # Step 1: Extract the names of items with errors from error_items
-        error_names=$(echo "$error_items" | jq -r '.[].name' | jq -R . | jq -s .)
+        error_names=$(echo "$error_items" | jq -r '.[].name' | jq -R -s .)
 
         # Step 2: Filter the original items to keep only those whose names match the error items
         items_with_errors=$(\
@@ -852,8 +906,22 @@ value="a b"
 required="yes"
 validate_fn="validate_name_value"
 
-run_collection_process "$items"
-
+#run_collection_process "$items"
+success "Hello"
+error "Hello"
+warning "Hello"
+info "Hello"
+highlight "Hello"
+debug "Hello"
+critical "Hello"
+note "Hello"
+important "Hello"
+wait "Hello"
+question "Hello"
+celebrate "Hello"
+progress "Hello"
+failure "Hello"
+tip "Hello"
 
 # # Test the validation function with invalid input
 # echo "$(validate_value "a b" 'validate_name_value')"
