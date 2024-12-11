@@ -139,7 +139,6 @@ clear_lines() {
 }
 
 
-
 # Function to install a package
 install_package() {
     local package="$1"
@@ -243,58 +242,72 @@ colorize() {
 }
 
 
-# Function to display a step with improved formatting
 get_status_icon() {
     local type="$1"
 
     case "$type" in
-        "success") echo "✅" ;;         # Success icon
-        "error") echo "❌" ;;           # Error icon
-        "warning") echo "⚠️" ;;         # Warning icon
-        "info") echo "📖" ;;            # Info icon
-        "highlight") echo "✨" ;;       # Highlight icon
-        "debug") echo "🐞" ;;           # Debug icon
-        "critical") echo "🚨" ;;        # Critical icon
-        "note") echo "📝" ;;            # Note icon
-        "important") echo "⚡" ;;       # Important icon
-        "wait") echo "⏳" ;;            # Highlight icon
-        "question") echo "❓" ;;        # Question icon
-        *) echo "🔵" ;;                 # Default icon (e.g., ongoing step)
+        "success") echo "🌟" ;;         # Bright star for success
+        "error") echo "🔥" ;;           # Fire icon for error
+        "warning") echo "⚠️" ;;         # Lightning for warning
+        "info") echo "💡" ;;            # Light bulb for info
+        "highlight") echo "🌈" ;;       # Rainbow for highlight
+        "debug") echo "🔍" ;;           # Magnifying glass for debug
+        "critical") echo "💀" ;;        # Skull for critical
+        "note") echo "📌" ;;            # Pushpin for note
+        "important") echo "⚡" ;;       # Rocket for important
+        "wait") echo "⌛" ;;            # Hourglass for waiting
+        "question") echo "🤔" ;;        # Thinking face for question
+        "celebrate") echo "🎉" ;;       # Party popper for celebration
+        "progress") echo "📈" ;;        # Upwards chart for progress
+        "failure") echo "💔" ;;         # Broken heart for failure
+        "tip") echo "🍀" ;;             # Four-leaf clover for additional success
+        *) echo "🌀" ;;                 # Cyclone for undefined type
     esac
 }
 
 
 # Function to get the color code based on the message type
 get_status_color() {
+    local type="$1"
+
     case "$type" in
-        "success") echo "green" ;;
-        "error") echo "red" ;;
-        "warning") echo "yellow" ;;
-        "info") echo "white" ;;
-        "highlight") echo "cyan" ;;
-        "debug") echo "blue" ;;
-        "critical") echo "magenta" ;;
-        "note") echo "gray" ;;
-        "important") echo "orange" ;;
-        "wait") echo "white" ;;
-        "question") echo "purple" ;;
-        *) echo "white" ;;  # Default to white for unknown types
+        "success") echo "green" ;;       # Green for success
+        "error") echo "light_red" ;;     # Light Red for error
+        "warning") echo "yellow" ;;      # Yellow for warning
+        "info") echo "teal" ;;          # White for info
+        "highlight") echo "cyan" ;;      # Cyan for highlight
+        "debug") echo "blue" ;;          # Blue for debug
+        "critical") echo "light_magenta" ;;    # Light Magenta for critical
+        "note") echo "pink" ;;           # Gray for note
+        "important") echo "gold" ;;    # Orange for important
+        "wait") echo "light_yellow" ;;   # Light Yellow for waiting
+        "question") echo "purple" ;;     # Purple for question
+        "celebrate") echo "green" ;;     # Green for celebration
+        "progress") echo "lime" ;;       # Blue for progress
+        "failure") echo "light_red" ;;         # Red for failure
+        "tip") echo "light_cyan" ;;     # Light Green for tips
+        *) echo "white" ;;               # Default to white for unknown types
     esac
 }
 
-
 # Function to get the style code based on the message type
 get_status_style() {
+    local type="$1"
+
     case "$type" in
         "success") echo "bold" ;;                      # Bold for success
-        "info") echo "italic" ;;                       # Italic for informational messages
-        "error") echo "bold,italic" ;;                 # Bold and italic to emphasize importance
-        "critical") echo "bold,underline" ;;           # Bold and underline to highlight severity
-        "warning") echo "underline" ;;                 # Underline for warnings to draw attention
-        "highlight") echo "bold,underline" ;;          # Bold and underline to emphasize key points
-        "wait") echo "dim,italic" ;;                   # Dim and italic to indicate pending status
-        "important") echo "bold,underline,overline" ;; # Bold, underline, and overline to importance
-        "question") echo "italic,underline" ;;         # Italic and underline to prompt input
+        "info") echo "italic" ;;                       # Italic for info
+        "error") echo "bold,italic" ;;                 # Bold and italic for errors
+        "critical") echo "bold,underline" ;;           # Bold and underline for critical
+        "warning") echo "underline" ;;                 # Underline for warnings
+        "highlight") echo "bold,underline" ;;          # Bold and underline for highlights
+        "wait") echo "dim,italic" ;;                   # Dim and italic for pending
+        "important") echo "bold,underline,overline" ;; # Bold, underline, overline for important
+        "question") echo "italic,underline" ;;         # Italic and underline for questions
+        "celebrate") echo "bold" ;;                    # Bold for celebration
+        "progress") echo "italic" ;;                   # Italic for progress
+        "failure") echo "bold,italic" ;;               # Bold and italic for failure
+        "tip") echo "bold,italic" ;;                   # Bold and italic for tips
         *) echo "normal" ;;                            # Default to normal style for unknown types
     esac
 }
@@ -309,26 +322,29 @@ colorize_by_type() {
 }
 
 
-# General function to format and display messages with optional timestamp, color, and icon
 format_message() {
-    local type="$1"              # Message type (success, error, etc.)
-    local text="$2"              # Message text
-    local has_timestamp="${3:-$HAS_TIMESTAMP}" # Option to display timestamp (default is false)
+    local type="$1"                             # Message type (success, error, etc.)
+    local text="$2"                             # Message text
+    local has_timestamp="${3:-$HAS_TIMESTAMP}"  # Option to display timestamp (default is false)
 
     # Get icon based on status
     local icon  
     icon=$(get_status_icon "$type")
 
     # Add timestamp if enabled
-    local formatted_message="$text"
+    local timestamp=""
     if [ "$has_timestamp" = true ]; then
-        formatted_message="[$(date '+%Y-%m-%d %H:%M:%S')] $formatted_message"
+        timestamp="[$(date '+%Y-%m-%d %H:%M:%S')] "
+        # Only colorize the timestamp
+        timestamp="$(colorize "$timestamp" "$(get_status_color "$type")" "normal")"
     fi
 
-    colorized_message="$(colorize_by_type "$type" "$formatted_message")"
+    # Colorize the main message
+    local colorized_message
+    colorized_message="$(colorize_by_type "$type" "$text")"
 
-    # Display the message with icon, color, style, and timestamp (if enabled)
-    echo -e "$icon $colorized_message"
+    # Display the message with icon, timestamp, and colorized message
+    echo -e "$icon $timestamp$colorized_message"
 }
 
 
@@ -339,85 +355,6 @@ echo_message() {
     local timestamp="${3:-$HAS_TIMESTAMP}"
     
     echo -e "$(format_message "$type" "$text" $timestamp)"
-}
-
-
-# Function to display a step with improved formatting
-step() {
-    local current_step="$1"         # Current step number
-    local total_steps="$2"          # Total number of steps
-    local message="$3"              # Step message
-    local type="${4:-DEFAULT_TYPE}" # Status type (default to 'info')
-    local timestamp="${5:-$HAS_TIMESTAMP}"          # Optional timestamp flag
-
-    # If 'timestamp' is passed as an argument, prepend the timestamp to the message
-    if [ -n "$timestamp" ]; then
-        local formatted_message=$(format_message "$type" "$step_message" true)
-    else
-        local formatted_message=$(format_message "$type" "$step_message" false)
-    fi
-
-    # Format the step message with the specified color and style
-    local message="Step $current_step/$total_steps: $message"
-    formatted_message=$(format_message "$type" "$message" $timestamp)
-
-    # Print the formatted message with the icon and message
-    echo -e "$formatted_message" >&2
-}
-
-
-# Function to display step success message
-step_info(){
-    local current=$1
-    local total=$2
-    local message=$3
-    local has_timestamp={$4:-$HAS_TIMESTAMP}
-    
-    step $current $total $message "info" $has_timestamp
-}
-
-
-# Function to display step success message
-step_success(){
-    local current=$1
-    local total=$2
-    local message=$3
-    local has_timestamp={$4:-$HAS_TIMESTAMP}
-    
-    step $current $total $message "success" $has_timestamp
-}
-
-
-# Function to display step error message
-step_error(){
-    local current=$1
-    local total=$2
-    local message=$3
-    local has_timestamp={$4:-$HAS_TIMESTAMP}
-    
-    step $current $total $message "error" $has_timestamp
-}
-
-
-# Function to display step success message
-step_warning(){
-    local current=$1
-    local total=$2
-    local message=$3
-    local has_timestamp={$4:-$HAS_TIMESTAMP}
-    
-    step $current $total $message "warning" $has_timestamp
-}
-
-
-# Function to display step success message
-step_info(){
-    local current=$1
-    local total=$2
-    local message=$3
-    local has_timestamp={$4:-$HAS_TIMESTAMP}
-    
-    step $current $total $message "info" $has_timestamp
 }
 
 
@@ -506,6 +443,117 @@ question() {
     local message="$1"                      # Step message
     local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
     echo_message 'question' "$message" $timestamp >&2
+}
+
+
+# Function to display celebrate formatted messages
+celebrate() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'celebrate' "$message" $timestamp >&2
+}
+
+
+# Function to display progress formatted messages
+progress() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'progress' "$message" $timestamp >&2
+}
+
+
+# Function to display failure formatted messages
+failure() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'failure' "$message" $timestamp >&2
+}
+
+
+# Function to display tip formatted messages
+tip() {
+    local message="$1"                      # Step message
+    local timestamp="${2:-$HAS_TIMESTAMP}"  # Optional timestamp flag
+    echo_message 'tip' "$message" $timestamp >&2
+}
+
+
+# Function to display a step with improved formatting
+step() {
+    local current_step="$1"         # Current step number
+    local total_steps="$2"          # Total number of steps
+    local message="$3"              # Step message
+    local type="${4:-DEFAULT_TYPE}" # Status type (default to 'info')
+    local timestamp="${5:-$HAS_TIMESTAMP}"          # Optional timestamp flag
+
+    # If 'timestamp' is passed as an argument, prepend the timestamp to the message
+    if [ -n "$timestamp" ]; then
+        local formatted_message=$(format_message "$type" "$step_message" true)
+    else
+        local formatted_message=$(format_message "$type" "$step_message" false)
+    fi
+
+    # Format the step message with the specified color and style
+    local message="Step $current_step/$total_steps: $message"
+    formatted_message=$(format_message "$type" "$message" $timestamp)
+
+    # Print the formatted message with the icon and message
+    echo -e "$formatted_message" >&2
+}
+
+
+# Function to display step info message
+step_info(){
+    local current=$1
+    local total=$2
+    local message=$3
+    local has_timestamp={$4:-$HAS_TIMESTAMP}
+    
+    step $current $total $message "info" $has_timestamp
+}
+
+
+# Function to display step success message
+step_success(){
+    local current=$1
+    local total=$2
+    local message=$3
+    local has_timestamp={$4:-$HAS_TIMESTAMP}
+    
+    step $current $total $message "success" $has_timestamp
+}
+
+
+# Function to display step error message
+step_error(){
+    local current=$1
+    local total=$2
+    local message=$3
+    local has_timestamp={$4:-$HAS_TIMESTAMP}
+    
+    step $current $total $message "error" $has_timestamp
+}
+
+
+# Function to display step warning message
+step_warning(){
+    local current=$1
+    local total=$2
+    local message=$3
+    local has_timestamp={$4:-$HAS_TIMESTAMP}
+    
+    step $current $total $message "warning" $has_timestamp
+}
+
+
+# Function to display step success message
+step_progress(){
+    local current=$1
+    local total=$2
+    local message=$3
+    local has_timestamp={$4:-$HAS_TIMESTAMP}
+    
+    step $current $total $message "progress" $has_timestamp
 }
 
 
@@ -975,6 +1023,201 @@ validate_json_from_schema() {
 }
 
 
+# Function to add JSON objects or arrays
+
+add_json_objects() {
+    local json1="$1"  # First JSON input
+    local json2="$2"  # Second JSON input
+
+    # Get the types of the input JSON values
+    local type1
+    local type2
+    type1=$(echo "$json1" | jq -e type 2>/dev/null | tr -d '"')
+    type2=$(echo "$json2" | jq -e type 2>/dev/null | tr -d '"')
+
+    # Check if both types were captured successfully
+    if [ -z "$type1" ] || [ -z "$type2" ]; then
+        echo "Error: One or both inputs are invalid JSON."
+        return 1
+    fi
+
+    # Perform different operations based on the types of inputs
+    local merged
+    case "$type1-$type2" in
+        object-object)
+            # Merge the two JSON objects
+            merged=$(jq -sc '.[0] * .[1]' <<<"$json1"$'\n'"$json2")
+            ;;
+        object-array)
+            # Append the object to the array
+            merged=$(jq -c '. + [$json1]' --argjson json1 "$json1" <<<"$json2")
+            ;;
+        array-object)
+            # Append the object to the array
+            merged=$(jq -c '. + [$json2]' --argjson json2 "$json2" <<<"$json1")
+            ;;
+        array-array)
+            # Concatenate the two arrays
+            merged=$(jq -sc '.[0] + .[1]' <<<"$json1"$'\n'"$json2")
+            ;;
+        *)
+            # Unsupported combination
+            error "Unsupported JSON types. Please provide valid JSON objects or arrays."
+            return 1
+            ;;
+    esac
+
+    # Output the merged result
+    echo "$merged"
+}
+
+
+# Function to sort array1 based on the order of names in array2 using a specified key
+sort_array_by_order() {
+    local array1="$1"
+    local order="$2"
+    local key="$3"
+
+    echo "$array1" | jq --argjson order "$order" --arg key "$key" '
+    map( .[$key] as $name | {item: ., index: ( $order | index($name) // length) } ) |
+    sort_by(.index) | map(.item)
+    '
+}
+
+
+# Function to extract values based on a key
+extract_values(){
+    echo "$1" | jq -r "map(.$2)"
+}
+
+
+# Function to extract a specific field from a JSON array
+extract_field() {
+    local json="$1"
+    local field="$2"
+    echo "$json" | jq -r ".[].$field"
+}
+
+
+# Function to filter items based on a field value match
+filter_items_by_name() {
+    local json="$1"
+    local name="$2"
+    echo "$json" | jq -c --arg name "$name" '[.[] | select(.name == $name)]'
+}
+
+
+# Function to add a JSON object to an array
+append_to_json_array() {
+    local json_array="$1"
+    local json_object="$2"
+    echo "$json_array" | jq ". += [$json_object]"
+}
+
+
+sort_array_according_to_other_array(){
+    local array1="$1"
+    local array2="$2"
+    local key="$3"
+    order="$(extract_values "$array2" "$key")"
+    echo "$(sort_array_by_order "$array1" "$order" "$key")"
+}
+
+
+# Function to convert an associative array to JSON
+convert_array_to_json() {
+    local -n array_ref=$1  # Reference to the associative array
+    local json="{"
+
+    # Iterate over array keys and values
+    for key in "${!array_ref[@]}"; do
+        # Escape key and value and add them to the JSON object
+        json+="\"$key\":\"${array_ref[$key]}\","
+    done
+
+    # Remove the trailing comma and close the JSON object
+    json="${json%,}}"
+
+    echo "$json"
+}
+
+
+# Save an associative array to a JSON file
+save_array_to_json() {
+    local file_path="$1"  # File path to save the JSON data
+    shift                 # Remove the first argument, leaving only the associative array parameters
+
+    # Declare the associative array and populate it
+    declare -A input_array
+    while [[ $# -gt 0 ]]; do
+        key="$1"
+        value="$2"
+        input_array["$key"]="$value"
+        shift 2  # Move to the next key-value pair
+    done
+
+    # Convert the associative array to JSON
+    local json_content
+    json_content=$(convert_array_to_json input_array)
+
+    # Save the JSON content to the specified file
+    write_json "$file_path" "$json_content"
+}
+
+
+# Function to write JSON content to a file atomically
+write_json() {
+    local file_path="$1"
+    local json_content="$2"
+
+    # Validate the JSON content
+    echo "$json_content" | jq . >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Invalid JSON content. Aborting save."
+        return 1
+    fi
+    echo "$json_content"
+    # Write the JSON content to the specified file using a temporary file for safety
+    local temp_file=$(mktemp)
+    echo "$json_content" >"$temp_file" && mv "$temp_file" "$file_path"
+
+    return 0
+}
+
+
+# Function to retrieve a value from a JSON file
+read_json_key() {
+    local json_data="$1"
+    local key="$2"
+    local default_value="$3"
+
+    # Extract the value using jq
+    local value
+    value=$(echo "$json_data" | jq -r "$key")
+
+    # If the value is not null or empty, return it, otherwise return the default value
+    if [ -n "$value" ] && [ "$value" != "null" ]; then
+        echo "$value"
+    else
+        echo "$default_value"
+    fi
+}
+
+
+# Function to display each error item with custom formatting
+display_error_items() {
+    local error_items="$1"  # JSON array of error objects
+
+    # Parse and iterate over each error item in the JSON array
+    echo "$error_items" | \
+    jq -r '.[] | "\(.name): \(.message) (Function: \(.function))"' | \
+    while IFS= read -r error_item; do
+        # Display the error item using the existing error function
+        error "$error_item"
+    done
+}
+
+
 # Function to handle exit codes and display success or failure messages
 handle_exit() {
     local exit_code="$1"
@@ -1000,6 +1243,14 @@ handle_exit() {
     # Exit with failure if there's an error
     if [ "$status" == "error" ]; then
         exit 1
+    fi
+}
+
+# Function to handle empty collections and avoid exiting prematurely
+handle_empty_collection() {
+    if [[ "$1" == "[]" ]]; then
+        warning "No data collected. Exiting process."
+        exit 0
     fi
 }
 
@@ -1173,6 +1424,7 @@ is_portainer_credentials_correct() {
         return 0  # Exit with status 0 for success
     fi
 }
+
 
 # Function to retrieve a Portainer authentication token
 get_portainer_auth_token() {
@@ -1506,26 +1758,6 @@ validate_compose_file() {
 }
 
 
-# Function to write JSON content to a file atomically
-write_json() {
-    local file_path="$1"
-    local json_content="$2"
-
-    # Validate the JSON content
-    echo "$json_content" | jq . >/dev/null 2>&1
-    if [[ $? -ne 0 ]]; then
-        echo "Error: Invalid JSON content. Aborting save."
-        return 1
-    fi
-    echo "$json_content"
-    # Write the JSON content to the specified file using a temporary file for safety
-    local temp_file=$(mktemp)
-    echo "$json_content" >"$temp_file" && mv "$temp_file" "$file_path"
-
-    return 0
-}
-
-
 # Function to check for cycles in service dependencies
 check_dependency_cycles() {
     local service_config_file=$1
@@ -1609,82 +1841,22 @@ check_dependency_cycles() {
 }
 
 
-# Function to convert an associative array to JSON
-convert_array_to_json() {
-    local -n array_ref=$1  # Reference to the associative array
-    local json="{"
-
-    # Iterate over array keys and values
-    for key in "${!array_ref[@]}"; do
-        # Escape key and value and add them to the JSON object
-        json+="\"$key\":\"${array_ref[$key]}\","
-    done
-
-    # Remove the trailing comma and close the JSON object
-    json="${json%,}}"
-
-    echo "$json"
-}
-
-
-# Save an associative array to a JSON file
-save_array_to_json() {
-    local file_path="$1"  # File path to save the JSON data
-    shift                 # Remove the first argument, leaving only the associative array parameters
-
-    # Declare the associative array and populate it
-    declare -A input_array
-    while [[ $# -gt 0 ]]; do
-        key="$1"
-        value="$2"
-        input_array["$key"]="$value"
-        shift 2  # Move to the next key-value pair
-    done
-
-    # Convert the associative array to JSON
-    local json_content
-    json_content=$(convert_array_to_json input_array)
-
-    # Save the JSON content to the specified file
-    write_json "$file_path" "$json_content"
-}
-
-
-# Function to retrieve a value from a JSON file
-read_json_key() {
-    local json_data="$1"
-    local key="$2"
-    local default_value="$3"
-
-    # Extract the value using jq
-    local value
-    value=$(echo "$json_data" | jq -r "$key")
-
-    # If the value is not null or empty, return it, otherwise return the default value
-    if [ -n "$value" ] && [ "$value" != "null" ]; then
-        echo "$value"
-    else
-        echo "$default_value"
-    fi
-}
-
-
 # Function to clean docker environment
 sanitize() {
-  # Prune unused containers, networks, volumes, and build cache
-  docker system prune --all --volumes -f
+    # Prune unused containers, networks, volumes, and build cache
+    docker system prune --all --volumes -f
 
-  # Remove any dangling (untagged) images
-  docker images --filter "dangling=true" -q | xargs -r docker rmi -f
+    # Remove any dangling (untagged) images
+    docker images --filter "dangling=true" -q | xargs -r docker rmi -f
 
-  # Optional: Remove stopped containers, if any remain (for extra cleanup)
-  docker container prune -f
+    # Optional: Remove stopped containers, if any remain (for extra cleanup)
+    docker container prune -f
 
-  # Optional: Remove unused Docker networks
-  docker network prune -f
+    # Optional: Remove unused Docker networks
+    docker network prune -f
 
-  # Optional: Remove orphaned volumes (if system prune misses any)
-  docker volume prune -f
+    # Optional: Remove orphaned volumes (if system prune misses any)
+    docker volume prune -f
 }
 
 
@@ -2207,7 +2379,7 @@ generate_config_n8n() {
     redis_json=$(printf "%s" "$redis_config" | jq -e . 2>/dev/null || echo "{}")
 
     local postgres_config
-    postgres_config=$(load_or_fail_service_config "postgres")    
+    postgres_config=$(load_or_fail_stack_config "postgres")    
     postgres_json=$(printf "%s" "$postgres_config" | jq -e . 2>/dev/null || echo "{}")
 
     # Generate the n8n configuration JSON
@@ -2280,7 +2452,7 @@ services:
       - "--providers.docker.swarmMode=true"
       - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network={{NETWORK_NAME}}"
+      - "--providers.docker.network={{network_name}}"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
@@ -2335,10 +2507,10 @@ volumes:
     name: volume_swarm_certificates
 
 networks:
-  {{NETWORK_NAME}}:
+  {{network_name}}:
     external: true
     attachable: true
-    name: {{NETWORK_NAME}}
+    name: {{network_name}}
 EOL
 }
 
@@ -2348,14 +2520,14 @@ compose_portainer() {
 services:
 
   agent:
-    image: portainer/agent:{{AGENT_VERSION}} ## Versão Agent do Portainer
+    image: portainer/agent:{{agent_version}} ## Versão Agent do Portainer
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker/volumes:/var/lib/docker/volumes
 
     networks:
-      - {{NETWORK_NAME}}
+      - {{network_name}}
 
     deploy:
       mode: global
@@ -2371,7 +2543,7 @@ services:
       - {{VOLUME_NAME}}:/data
 
     networks:
-      - {{NETWORK_NAME}} ## Nome da rede interna
+      - {{network_name}} ## Nome da rede interna
 
     deploy:
       mode: replicated
@@ -2407,28 +2579,28 @@ compose_redis() {
     cat <<EOL
 services:
   redis:
-    image: redis:{{IMAGE_VERSION}}
+    image: redis:{{image_version}}
     command: [
         "redis-server",
         "--appendonly",
         "yes",
         "--port",
-        "{{CONTAINER_PORT}}"
+        "{{container_port}}"
     ]
     volumes:
-      - {{VOLUME_NAME}}:/data
+      - {{volume_name}}:/data
     networks:
-      - {{NETWORK_NAME}}
+      - {{network_name}}
 
 volumes:
-  {{VOLUME_NAME}}:
+  {{volume_name}}:
     external: true
-    name: {{VOLUME_NAME}}
+    name: {{volume_name}}
 
 networks:
-  {{NETWORK_NAME}}:
+  {{network_name}}:
     external: true
-    name: {{NETWORK_NAME}}
+    name: {{network_name}}
 EOL
 }
 
@@ -2440,24 +2612,24 @@ services:
   postgres:
     image: postgres:{{IMAGE_VERSION}}
     environment:
-      - POSTGRES_PASSWORD={{DB_PASSWORD}}
+      - POSTGRES_PASSWORD={{db_password}}
       - PG_MAX_CONNECTIONS=500
     ## Uncomment the following line to use a custom configuration file
     # ports:
-    #   - {{CONTAINER_PORT}}:5432
+    #   - {{container_port}}:5432
     volumes:
-      - {{VOLUME_NAME}}:/var/lib/postgresql/data
+      - {{volume_name}}:/var/lib/postgresql/data
     networks:
-      - {{NETWORK_NAME}}
+      - {{network_name}}
 
 volumes:
-  {{VOLUME_NAME}}:
+  {{volume_name}}:
     external: true
 
 networks:
-  {{NETWORK_NAME}}:
+  {{network_name}}:
     external: true
-    name: {{NETWORK_NAME}}
+    name: {{network_name}}
 EOL
 }
 
@@ -2470,16 +2642,16 @@ version: '3.8'
 # Common environment variables definition
 x-common-env: &common-env
   DB_TYPE: postgresdb
-  DB_POSTGRESDB_DATABASE: {{DB_NAME}}
-  DB_POSTGRESDB_HOST: {{DB_HOST}}
-  DB_POSTGRESDB_PORT: {{DB_PORT}}
-  DB_POSTGRESDB_USER: {{DB_USER}}
-  DB_POSTGRESDB_PASSWORD: {{DB_PASSWORD}}
-  N8N_ENCRYPTION_KEY: {{ENCRYPTION_KEY}}
-  N8N_HOST: {{EDITOR_HOST}}
-  N8N_EDITOR_BASE_URL: {{PROTOCOL}}://{{EDITOR_HOST}}/
-  WEBHOOK_URL: {{PROTOCOL}}://{{WEBHOOK_HOST}}/
-  N8N_PROTOCOL: {{PROTOCOL}}
+  DB_POSTGRESDB_DATABASE: {{db_name}}
+  DB_POSTGRESDB_HOST: {{db_host}}
+  DB_POSTGRESDB_PORT: {{db_port}}
+  DB_POSTGRESDB_USER: {{db_user}}
+  DB_POSTGRESDB_PASSWORD: {{db_password}}
+  N8N_ENCRYPTION_KEY: {{encryption_key}}
+  N8N_HOST: {{editor_host}}
+  N8N_EDITOR_BASE_URL: {{protocol}}://{{editor_host}}/
+  WEBHOOK_URL: {{protocol}}://{{webhook_host}}/
+  N8N_PROTOCOL: {{protocol}}
   NODE_ENV: production
   EXECUTIONS_MODE: queue
 
@@ -2493,7 +2665,7 @@ x-common-depends-on: &common-depends-on
 # Global Deploy Configuration for All Services
 x-common-deploy: &common-deploy
   mode: replicated
-  replicas: {{REPLICAS}}
+  replicas: {{replicas}}
   placement:
     constraints:
       - node.role == manager
@@ -2504,48 +2676,48 @@ x-common-deploy: &common-deploy
 
 services:
   # Editor service
-  {{INSTANCE_LABEL}}_editor:
-    image: n8nio/n8n:{{IMAGE_VERSION}}
+  {{instance_name}}_editor:
+    image: n8nio/n8n:{{image_version}}
     command: start
     environment:
       <<: *common-env
-      N8N_SMTP_SENDER: {{SMTP_SENDER}}
-      N8N_SMTP_USER: {{SMTP_USER}}
+      N8N_SMTP_SENDER: {{smtp_sender}}
+      N8N_SMTP_USER: {{smtp_user}}
     depends_on: *common-depends-on
     deploy: *common-deploy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.{{INSTANCE_LABEL}}_editor.rule=Host(\`{{EDITOR_HOST}}\`)
-      - traefik.http.routers.{{INSTANCE_LABEL}}_editor.entrypoints=websecure
-      - traefik.http.routers.{{INSTANCE_LABEL}}_editor.tls.certresolver=letsencryptresolver
-      - traefik.http.services.{{INSTANCE_LABEL}}_editor.loadbalancer.server.port=5678
+      - traefik.http.routers.{{instance_name}}_editor.rule=Host(\`{{editor_host}}\`)
+      - traefik.http.routers.{{instance_name}}_editor.entrypoints=websecure
+      - traefik.http.routers.{{instance_name}}_editor.tls.certresolver=letsencryptresolver
+      - traefik.http.services.{{instance_name}}_editor.loadbalancer.server.port=5678
 
   # Webhook service
   webhook:
-    image: n8nio/n8n:{{IMAGE_VERSION}}
+    image: n8nio/n8n:{{image_version}}
     command: webhook
     environment: *common-env
     depends_on: *common-depends-on
     deploy: *common-deploy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.{{INSTANCE_LABEL}}_webhook.rule=Host(\`{{WEBHOOK_HOST}}\`)
-      - traefik.http.routers.{{INSTANCE_LABEL}}_webhook.entrypoints=websecure
-      - traefik.http.routers.{{INSTANCE_LABEL}}_webhook.tls.certresolver=letsencryptresolver
-      - traefik.http.services.{{INSTANCE_LABEL}}_webhook.loadbalancer.server.port=5678
+      - traefik.http.routers.{{instance_name}}_webhook.rule=Host(\`{{webhook_host}}\`)
+      - traefik.http.routers.{{instance_name}}_webhook.entrypoints=websecure
+      - traefik.http.routers.{{instance_name}}_webhook.tls.certresolver=letsencryptresolver
+      - traefik.http.services.{{instance_name}}_webhook.loadbalancer.server.port=5678
 
   # Worker service
   worker:
-    image: n8nio/n8n:{{IMAGE_VERSION}}
+    image: n8nio/n8n:{{image_version}}
     command: worker --concurrency=10
     environment: *common-env
     depends_on: *common-depends-on
     deploy: *common-deploy
 
 networks:
-  {{NETWORK_NAME}}:
+  {{network_name}}:
     external: true
-    name: {{NETWORK_NAME}}
+    name: {{network_name}}
 EOL
 }
 
@@ -2670,7 +2842,7 @@ update_and_install_packages() {
     fi
     
     step_message="Updating system and upgrading packages"
-    step 1 $total_steps $step_message "info"
+    step_progress 1 $total_steps $step_message
 
     # Update the system, fix broken installs, and upgrade packages, suppressing output
     DEBIAN_FRONTEND=noninteractive apt update -yq > /dev/null 2>&1
@@ -2694,7 +2866,7 @@ update_and_install_packages() {
     # Install required packages quietly
     packages=("sudo" "apt-utils" "apparmor-utils" "jq" "python3" "docker")
     step_message="Installing required packages"
-    step_info 2 $total_steps $step_message
+    step_progress 2 $total_steps $step_message
 
     # Install all packages
     install_all_packages "${packages[@]}"
@@ -2724,13 +2896,15 @@ prompt_server_info() {
             "name": "server_name",
             "label": "Server Name",
             "description": "The name of the server", 
-            "required": "yes" 
+            "required": "yes",
+            "validate_fn": "validate_name_value"
         }, 
         { 
             "name": "network_name", 
             "label": "Network Name", 
             "description": "The name of the network for Docker stack", 
-            "required": "yes"
+            "required": "yes",
+            "validate_fn": "validate_name_value"
         }
     ]'
     
@@ -2773,7 +2947,7 @@ get_server_info() {
     # Get the server and network information
     server_array="$(prompt_server_info)"
     if [[ "$server_array" == "[]" ]]; then
-        echo "Error: Unable to retrieve server and network names."
+        error "Unable to retrieve server and network names."
         exit 1
     fi
 
@@ -2785,7 +2959,7 @@ get_server_info() {
 
     # Check if the merge was successful
     if [[ $? -ne 0 ]]; then
-        echo "Error: Failed to merge the server and IP information."
+        error "Failed to merge the server and IP information."
         exit 1
     fi
 
@@ -2797,55 +2971,70 @@ get_server_info() {
 # Function to initialize the server information
 initialize_server_info(){
     total_steps=5
+    server_filename="server_info.json"
 
     # Step 1: Check if server_info.json exists and is valid
-    if [[ -f "server_info.json" ]]; then
-        server_info_json=$(cat server_info.json 2>/dev/null)
+    if [[ -f "$server_filename" ]]; then
+        server_info_json=$(cat "$server_filename" 2>/dev/null)
         if jq -e . >/dev/null 2>&1 <<<"$server_info_json"; then
             info "Valid server_info.json found. Using existing information."
         else
-            warning "server_info.json is invalid. Reinitializing..."
+            warning "Content on file $server_filename is invalid. Reinitializing..."
             server_info_json=$(get_server_info)
         fi
     else
-        info "server_info.json not found. Retrieving server information..."
+        info "File $server_filename not found. Retrieving server information..."
         server_info_json=$(get_server_info)
 
         # Save the server information to a JSON file
-        cat "$server_info_json" > server_info.json
-        info "Server information saved to server_info.json"
+        cat "$server_info_json" > "$server_filename"
+        info "Server information saved to file $$server_filename"
     fi
 
     # Extract server_name and network_name
     server_name=$(echo "$server_info_json" | jq -r '.[0].server_name')
     network_name=$(echo "$server_info_json" | jq -r '.[0].network_name')
     if [[ -z "$server_name" || -z "$network_name" ]]; then
-        echo "Error: Missing server_name or network_name in server_info.json"
+        error "Missing server_name or network_name in file $server_filename"
         exit 1
     fi
 
     # Set Hostname
     step_message="Set Hostname"
-    step_info 1 $total_steps "$step_message"
+    step_progress 1 $total_steps "$step_message"
     hostnamectl set-hostname "$server_name" > /dev/null 2>&1
     handle_exit $? 1 $total_steps "$step_message"
     
-    # Step 6: Update /etc/hosts
+    # Update /etc/hosts
     step_message="Add name to server in hosts file at path /etc/hosts"
-    step_info 2 $total_steps "$step_message"
+    step_progress 2 $total_steps "$step_message"
     sed -i "s/127.0.0.1[[:space:]]localhost/127.0.0.1 $server_name/g" /etc/hosts > /dev/null 2>&1
     handle_exit $? 2 $total_steps "$step_message"
 
-    # Step 7: Initialize Docker Swarm
+    # Initialize Docker Swarm
     step_message="Docker Swarm initialization"
-    step_info 3 $total_steps "$step_message"
+    step_progress 3 $total_steps "$step_message"
     if docker info 2>&1 | grep -q 'Swarm: active'; then
         step_warning 3 $total_steps "$step_message"
     else
         docker swarm init --advertise-addr "$(get_ip)" > /dev/null 2>&1
         handle_exit $? 3 $total_steps "$step_message"
     fi
+
+    success "Server initialization complete"
 }
+
+
+# Declare arrays for stack labels (user-friendly) and stack names (internal)
+# IMPORTANT: The order of the arrays should match
+# NOTE: Add new stacks here
+declare -a stack_labels=("Redis" "Postgres" "N8N")
+declare -a stack_names=("redis" "postgres" "n8n")
+declare -a stack_descriptions=(
+    "A powerful in-memory data structure store used as a database, cache, and message broker."
+    "A relational database management system emphasizing extensibility and SQL compliance."
+    "A workflow automation tool that allows you to automate tasks and integrate various services."
+)
 
 
 # Function to deploy the selected stack based on input
@@ -2871,27 +3060,18 @@ deploy_stack() {
 
 # Function to display a great farewell message
 farewell_message() {
-    highlight ""
-    highlight "🌟 Thank you for using the Deployment Tool OpenStack! 🌟"
-    highlight ""
-    highlight "Your journey doesn't end here:it's just a new beginning."
-    highlight "Remember: Success is the sum of small efforts, repeated day in and day out. 🚀"
-    highlight ""
-    highlight "We hope to see you again soon. Until then, happy coding and stay curious! ✨"
-    highlight ""
+    celebrate ""
+    celebrate "🌟 Thank you for using the Deployment Tool OpenStack! 🌟"
+    celebrate ""
+    celebrate "Your journey doesn't end here:it's just a new beginning."
+    celebrate "Remember: Success is the sum of small efforts, repeated day in and day out. 🚀"
+    celebrate ""
+    celebrate "We hope to see you again soon. Until then, happy coding and stay curious! ✨"
+    celebrate ""
 }
 
 
 choose_stack_to_install() {
-    # Declare arrays for stack labels (user-friendly) and stack names (internal)
-    declare -a stack_labels=("Redis" "Postgres" "N8N")
-    declare -a stack_names=("redis" "postgres" "n8n")
-    declare -a stack_descriptions=(
-        "A powerful in-memory data structure store used as a database, cache, and message broker."
-        "A relational database management system emphasizing extensibility and SQL compliance."
-        "A workflow automation tool that allows you to automate tasks and integrate various services."
-    )
-
     # Constants for pagination
     local items_per_page=2
     local total_items=${#stack_labels[@]}
@@ -2969,8 +3149,6 @@ choose_stack_to_install() {
         fi
     done
 }
-
-
 
 
 # Display help message
@@ -3064,14 +3242,3 @@ main() {
 # Call the main function
 main "$@"
 
-# username="conexxohub_portainer" 
-# password="ConexxoHub!54321" 
-# portainer_url="portainer.conexxohub.com.br"
-# 
-# token="$(get_portainer_auth_token $portainer_url $username $password)"
-# echo "$token"
-# 
-# stack_name='n8n'
-# echo "$(check_portainer_stack_exists $portainer_url $token $stack_name)"
-# 
-# get_portainer_swarm_stacks $portainer_url $token
