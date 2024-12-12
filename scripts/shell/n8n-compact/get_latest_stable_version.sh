@@ -11,12 +11,9 @@ check_image_exists() {
 
     # Check the HTTP status code
     if [ "$response" -eq 200 ]; then
-        echo "✅ The image '${image_name}:${tag}' exists in the Docker registry."
     elif [ "$response" -eq 404 ]; then
-        echo "❌ The image '${image_name}:${tag}' does not exist in the Docker registry."
         exit 1  # Exit if the image doesn't exist
     else
-        echo "⚠️ Error checking the image '${image_name}:${tag}'. HTTP Status: $response"
         exit 1  # Exit in case of an error while checking
     fi
 }
@@ -37,6 +34,11 @@ get_latest_stable_version() {
     local latest_version=""
     local total_count=0
     local stable_tags=()
+
+    check_image_exists "$image_name" 2>&1 >/dev/null
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
 
     # Fetch the first page to get the total count
     response=$(curl -s "$current_url")

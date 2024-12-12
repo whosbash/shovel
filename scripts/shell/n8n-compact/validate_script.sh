@@ -225,20 +225,64 @@ check_indentation() {
 
     validate_file "$file"
     local indentation_error=0
+    local line_number=0
+    local indent_issue_lines=()
+
+    # Check for inconsistent indentation (accept 2 or 4 spaces)
     while IFS= read -r line; do
-        if [[ "$line" =~ ^[[:space:]]+ && ! "$line" =~ ^[[:space:]]{4,} ]]; then
+        ((line_number++))
+
+        # Match lines with either 2 or 4 spaces but not other combinations
+        if [[ "$line" =~ ^[[:space:]]+ && ! "$line" =~ ^([[:space:]]{2}|[[:space:]]{4}) ]]; then
             indentation_error=1
-            break
+            indent_issue_lines+=("$line_number: $line")  # Store the line number and content
         fi
     done <"$file"
+
     if [[ "$indentation_error" -eq 1 ]]; then
-        print_message "$COLOR_YELLOW" \
-            "Warning: Inconsistent indentation found. Ensure consistent spaces or tabs."
+        print_message "$COLOR_YELLOW" "Warning: Inconsistent indentation found. Fixing indentation using shfmt."
+        
+        # Print the lines with issues
+        echo "Indentation issues found at the following lines:"
+        for issue in "${indent_issue_lines[@]}"; do
+            echo "$issue"
+        done
+        echo ""
+        
+        # Use shfmt to automatically fix the indentation (standardize to 2 spaces)
+        shfmt -w -i 2 "$file"
+        
+        # Check indentation again after shfmt fixes it
+        indentation_error=0
+        unset indent_issue_lines
+        line_number=0
+
+        while IFS= read -r line; do
+            ((line_number++))
+
+            # Check again for inconsistent indentation
+            if [[ "$line" =~ ^[[:space:]]+ && ! "$line" =~ ^([[:space:]]{2}|[[:space:]]{4}) ]]; then
+                indentation_error=1
+                indent_issue_lines+=("$line_number: $line")  # Store the line number and content
+            fi
+        done <"$file"
+
+        if [[ "$indentation_error" -eq 0 ]]; then
+            print_message "$COLOR_GREEN" "Indentation has been fixed and is now consistent."
+        else
+            print_message "$COLOR_RED" "Indentation issue persists after fixing with shfmt."
+            echo "The following lines still have indentation issues:"
+            for issue in "${indent_issue_lines[@]}"; do
+                echo "$issue"
+            done
+        fi
     else
         print_message "$COLOR_GREEN" "Indentation is consistent."
     fi
     echo ""
 }
+
+
 
 # Code quality functions
 calculate_cyclomatic_complexity() {
@@ -335,23 +379,34 @@ find_large_lines() {
 
     validate_file "$file"
 
-    # Track the lines that are too large
+    # Track the number of large lines
     local lines_found=0
 
     # Use awk to find lines larger than max_length and print them
     awk -v max_length="$max_length" '
         length($0) > max_length {
-            print NR ": " length($0) " characters"
+            print NR ": " length($0) " characters - " $0
             lines_found++
         }
-    ' "$file" | tee >(while read -r line; do increment_warnings 1; done)
+    ' "$file" > /tmp/large_lines_output.txt
 
-    # Check the result from awk to count how many large lines were found
-    if [[ "$lines_found" -gt 0 ]]; then
-        print_message "$COLOR_YELLOW" "Found lines longer than $max_length characters."
+    # Capture the output of awk into a variable
+    local output=$(cat /tmp/large_lines_output.txt)
+
+    # If any large lines were found, print them in yellow
+    if [[ -n "$output" ]]; then
+        print_message "$COLOR_YELLOW" "$output"
+        # Count how many lines were found
+        local lines_found=$(echo "$output" | grep -c "characters")
+        increment_warnings "$lines_found"
     else
+        # If no large lines were found, print nothing or an empty message
         print_message "$COLOR_GREEN" "No lines exceeding $max_length characters found."
     fi
+
+    # Clean up temporary file
+    rm /tmp/large_lines_output.txt
+
     echo ""
 }
 
@@ -369,6 +424,7 @@ check_function_length() {
     local line_count=0
     local issues=0
     local function_name=""
+    local long_functions=""
 
     # Matches 'function function_name'
     pattern_1='function[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*'
@@ -407,20 +463,28 @@ check_function_length() {
         if [[ $line_count -gt "$max_length" && $function_start -gt 0 ]]; then
             ((issues++))
             message="Function '$function_name' exceeds $max_length lines."
+            long_functions="$long_functions\n$message"
+
+            # Optionally print verbose message
             [[ "$verbose" == true ]] && print_message "$COLOR_YELLOW" "$message"
-            function_start=0  # Reset after reporting
-            line_count=0  # Reset line count
+
+            # Reset after reporting
+            function_start=0
+            line_count=0
         fi
     done <"$file"
 
+    # If any functions exceeded the max length, display them
     if [[ $issues -gt 0 ]]; then
-        print_message "$COLOR_YELLOW" "Found functions longer than $max_length lines."
+        print_message "$COLOR_YELLOW" "Found functions longer than $max_length lines:"
+        echo -e "$long_functions"  # Output the list of long functions
         increment_warnings "$issues"
     else
         print_message "$COLOR_GREEN" "All functions are within the length limit."
     fi
     echo ""
 }
+
 
 
 # Process a single file
