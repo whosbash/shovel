@@ -232,17 +232,17 @@ run_command() {
     local message_filter="$5"  # Custom filter for message processing
 
     # Format and display step message
-    format_message "info" "Step $current_step/$total_steps: $step_message" true
+    format "info" "Step $current_step/$total_steps: $step_message" true
 
     # Execute the command and process its output
     $command 2>&1 | while IFS= read -r line; do
         # Format and display the output based on the message filter or default behavior
         if [[ "$line" =~ $message_filter ]]; then
-            format_message "info" "$line"
+            format "info" "$line"
         elif [[ "$line" =~ Error.* ]]; then
-            format_message "error" "$line"
+            format "error" "$line"
         else
-            format_message "normal" "$line"
+            format "normal" "$line"
         fi
     done
 
@@ -251,9 +251,9 @@ run_command() {
 
     # Handle command exit status
     if [ $exit_code -eq 0 ]; then
-        format_message "success" "Step $current_step/$total_steps succeeded: $step_message" true
+        format "success" "Step $current_step/$total_steps succeeded: $step_message" true
     else
-        format_message "warning" "Step $current_step/$total_steps completed with warnings or errors: $step_message" true
+        format "warning" "Step $current_step/$total_steps completed with warnings or errors: $step_message" true
     fi
 
     return $exit_code
@@ -490,7 +490,7 @@ colorize_by_type() {
 	colorize "$text" "$(get_status_color "$type")" "$(get_status_style "$type")"
 }
 
-format_message() {
+format() {
 	local type="$1"                            # Message type (success, error, etc.)
 	local text="$2"                            # Message text
 	local has_timestamp="${3:-$HAS_TIMESTAMP}" # Option to display timestamp (default is false)
@@ -521,7 +521,7 @@ echo_message() {
 	local text="$2"
 	local timestamp="${3:-$HAS_TIMESTAMP}"
 
-	echo -e "$(format_message "$type" "$text" $timestamp)"
+	echo -e "$(format "$type" "$text" $timestamp)"
 }
 
 # Function to display success formatted messages
@@ -639,14 +639,14 @@ step() {
 
 	# If 'timestamp' is passed as an argument, prepend the timestamp to the message
 	if [ -n "$timestamp" ]; then
-		local formatted_message=$(format_message "$type" "$step_message" true)
+		local formatted_message=$(format "$type" "$step_message" true)
 	else
-		local formatted_message=$(format_message "$type" "$step_message" false)
+		local formatted_message=$(format "$type" "$step_message" false)
 	fi
 
 	# Format the step message with the specified color and style
 	local message="[$current_step/$total_steps] $message"
-	formatted_message=$(format_message "$type" "$message" $timestamp)
+	formatted_message=$(format "$type" "$message" $timestamp)
 
 	# Print the formatted message with the icon and message
 	echo -e "$formatted_message" >&2
@@ -854,7 +854,7 @@ prompt_for_input() {
 	local general_info="Prompting $required_label variable $name: $description"
 	local explanation="Enter a value or type 'q' to quit"
 	local prompt="$general_info\n$explanation: "
-	fmt_prompt=$(format_message 'question' "$prompt")
+	fmt_prompt=$(format 'question' "$prompt")
 
 	while true; do
 		read -rp "$fmt_prompt" value
@@ -925,7 +925,7 @@ confirm_and_modify_prompt_info() {
 		# Ask for confirmation (stderr)
 		options="y) Yes, n) No, q) Quit, ? Show options"
 		confirmation_msg="$(
-			format_message "question" "Is the information correct? ($options) "
+			format "question" "Is the information correct? ($options) "
 		)"
 		read -rp "$confirmation_msg" confirmation
 
@@ -957,7 +957,7 @@ confirm_and_modify_prompt_info() {
 		n)
 			# Ask for the field to modify (stderr)
 			field_query="$(
-				format_message "question" "Which field would you like to modify? "
+				format "question" "Which field would you like to modify? "
 			)"
 			read -rp "$field_query" field_to_modify
 
@@ -972,7 +972,7 @@ confirm_and_modify_prompt_info() {
 			if [[ -n "$current_value" ]]; then
 				info "Current value for $field_to_modify: $current_value"
 
-				new_value_query="$(format_message "question" "Enter new value: ")"
+				new_value_query="$(format "question" "Enter new value: ")"
 				read -rp "$new_value_query" new_value
 
 				if [[ -n "$new_value" ]]; then
@@ -1562,7 +1562,7 @@ wait_for_input() {
     fi
 
     # Display the prompt message and wait for user input
-    prompt_message="$(format_message "$type" "$prompt_message")"
+    prompt_message="$(format "$type" "$prompt_message")"
     read -rp "$prompt_message" user_input
 }
 
@@ -2166,11 +2166,11 @@ sanitize_docker_environment() {
                     2 5 "Removing dangling Docker image: $image"
             else
                 # Image is in use by a running container, skipping it
-                format_message "warning" "Skipping removal of dangling image $image as it is in use."
+                format "warning" "Skipping removal of dangling image $image as it is in use."
             fi
         done
     else
-        format_message "info" "No dangling Docker images found."
+        format "info" "No dangling Docker images found."
     fi
 
 
@@ -2189,7 +2189,7 @@ sanitize_docker_environment() {
         "docker volume prune -f" \
         5 $total_steps "Pruning orphaned Docker volumes"
 
-    format_message "success" "Docker environment cleanup completed successfully." true
+    format "success" "Docker environment cleanup completed successfully." true
 }
 
 
@@ -3149,7 +3149,7 @@ deploy_stack_n8n() {
 
 	# Prompt the user to provide an identifier if not passed as an argument
 	if [[ -z "$1" ]]; then
-		identifier_msg=$(format_message "question" "Enter an identifier for the n8n service: ")
+		identifier_msg=$(format "question" "Enter an identifier for the n8n service: ")
 		read -p "$identifier_msg" identifier
 	else
 		identifier="$1"
@@ -3446,7 +3446,7 @@ choose_stack_to_install() {
 		fi
 
 		# Read user input
-		local choice_message="$(format_message "highlight" "Enter your choice: ")"
+		local choice_message="$(format "highlight" "Enter your choice: ")"
 		read -p "$choice_message" choice
 
 		# Handle navigation and selection

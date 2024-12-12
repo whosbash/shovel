@@ -218,7 +218,7 @@ colorize_by_type() {
 
 
 # General function to format and display messages with optional timestamp, color, and icon
-format_message() {
+format() {
     local type="$1"                             # Message type (success, error, etc.)
     local text="$2"                             # Message text
     local has_timestamp="${3:-$HAS_TIMESTAMP}"  # Option to display timestamp (default is false)
@@ -246,7 +246,7 @@ echo_message() {
     local text="$2"
     local timestamp="${3:-$HAS_TIMESTAMP}"
     
-    echo -e "$(format_message "$type" "$text" $timestamp)"
+    echo -e "$(format "$type" "$text" $timestamp)"
 }
 
 
@@ -530,7 +530,7 @@ prompt_for_input() {
     local general_info="Prompting $required_label variable $name: $description"
     local explanation="Enter a value or type 'q' to quit"
     local prompt="$general_info\n$explanation: "
-    fmt_prompt=$(format_message 'question' "$prompt")
+    fmt_prompt=$(format 'question' "$prompt")
 
     while true; do
         read -rp "$fmt_prompt" value
@@ -603,7 +603,7 @@ confirm_and_modify_prompt_info() {
         # Ask for confirmation (stderr)
         options="y to confirm, n to modify, or q to quit"
         confirmation_msg="$(
-            format_message "question" "Is the information correct? ($options) "
+            format "question" "Is the information correct? ($options) "
         )"
         read -rp "$confirmation_msg" confirmation
 
@@ -616,7 +616,7 @@ confirm_and_modify_prompt_info() {
         n)
             # Ask for the field to modify (stderr)
             field_query="$(
-                format_message "question" "Which field would you like to modify? "
+                format "question" "Which field would you like to modify? "
             )"
             read -rp "$field_query" field_to_modify
 
@@ -631,7 +631,7 @@ confirm_and_modify_prompt_info() {
             if [[ -n "$current_value" ]]; then
                 info "Current value for $field_to_modify: $current_value"
                 
-                new_value_query="$(format_message "question" "Enter new value: ")"
+                new_value_query="$(format "question" "Enter new value: ")"
                 read -rp "$new_value_query" new_value
                 if [[ -n "$new_value" ]]; then
                     # Modify the JSON by updating the value of the specified field
