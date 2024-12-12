@@ -1,107 +1,129 @@
 #!/bin/bash
 
-# Function to check if a Docker image exists in the registry
-check_image_exists() {
+# Function to fetch stable tags from a response
+fetch_stable_tags_from_page() {
+    echo "$1" | jq -r '.results[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$|^[0-9]+\.[0-9]+$'
+}
+
+# Determine if an image is official
+is_official_image() {
+    # Measure execution time
     local image_name=$1
-    local tag=${2:-latest} # Default to "latest" if no tag is provided
-    local url="https://registry.hub.docker.com/v2/repositories/library/${image_name}/tags/${tag}/"
+    local response=""
 
-    # Make a request to the registry
-    response=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+    # Try fetching the official image first
+    response=$(curl -fsSL "https://hub.docker.com/v2/repositories/library/${image_name}" 2>/dev/null)
+    
+    # Check if the response contains 'name' indicating it's an official image
+    if [ $? -eq 0 ] && echo "$response" | jq -e '.name' >/dev/null 2>&1; then
+        echo "true"  # It's an official image
+        return
+    fi
 
-    # Check the HTTP status code
-    if [ "$response" -eq 200 ]; then
-    elif [ "$response" -eq 404 ]; then
-        exit 1  # Exit if the image doesn't exist
+    # If official image fails, try fetching the non-official image (user/organization image)
+    response=$(curl -fsSL "https://hub.docker.com/v2/repositories/${image_name}")
+    
+    # If the response contains 'name', it's a valid (non-official) image
+    if [ $? -eq 0 ] && echo "$response" | jq -e '.name' >/dev/null 2>&1; then
+        echo "false"  # It's a non-official image
     else
-        exit 1  # Exit in case of an error while checking
+        # If neither the official nor non-official image is found, return false
+        echo "false"  # Image not found
     fi
 }
 
-# Function to fetch stable tags from a given page
-fetch_stable_tags_from_page() {
-    local response=$1
-
-    # Extract tags from the page response and filter only valid stable versions
-    echo "$response" | jq -r '.results[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$|^[0-9]+\.[0-9]+$'
-}
-
-# Main function to get the latest stable version
+# Get the latest stable version
 get_latest_stable_version() {
     local image_name=$1
-    local base_url="https://registry.hub.docker.com/v2/repositories/library/${image_name}/tags?page_size=100"
-    local current_url=$base_url
-    local latest_version=""
+    local base_url=""
+    local current_url=""
     local total_count=0
     local stable_tags=()
+    local latest_version=""
 
-    check_image_exists "$image_name" 2>&1 >/dev/null
-    if [ $? -ne 0 ]; then
-        exit 1
+    start_time=$(date +%s%N)
+
+    # Set the correct base URL
+    if [ "$(is_official_image "$image_name")" == "true" ]; then
+        base_url="https://hub.docker.com/v2/repositories/library/${image_name}/tags?page_size=100"
+    else
+        base_url="https://hub.docker.com/v2/repositories/${image_name}/tags?page_size=100"
     fi
 
-    # Fetch the first page to get the total count
-    response=$(curl -s "$current_url")
+    # Fetch the first page to determine total pages
+    response=$(curl -fsSL "$base_url" || echo "")
+    if [ -z "$response" ] || [ "$(echo "$response" | jq -r '.count')" == "null" ]; then
+        echo "Image '$image_name' not found or registry unavailable."
+        return 1
+    fi
+
     total_count=$(echo "$response" | jq -r '.count')
-    total_pages=$(( (total_count + 99) / 100 )) # Calculate total pages (rounding up)
-    
-    # Fetch stable tags from the first page
-    page_tags=$(fetch_stable_tags_from_page "$response")
+    total_pages=$(( (total_count + 99) / 100 ))
 
-    # If stable tags are found on the first page, stop and report
-    if [ -n "$page_tags" ]; then
-        latest_version=$(printf "%s\n" "${page_tags[@]}" | sort -V | uniq | tail -n 1)
-        echo "${latest_version}"
-        return  # Exit the function early since we found stable versions
-    fi
-
-    # Setting up binary search interval
-    low=1         # Initial low page number
-    high=$total_pages  # Start with the last page
-
-    # Implementing binary search for stable versions
+    # Perform binary search for latest stable version
+    low=1
+    high=$total_pages
     while [ $low -le $high ]; do
-        mid=$(((low + high) / 2))  # Find the middle page
-
+        mid=$(((low + high) / 2))
         current_url="${base_url}&page=$mid"
-        
-        # Fetch the current page
-        response=$(curl -s "$current_url")
-        
-        # Fetch stable tags from the current page
+
+        # Fetch the page
+        response=$(curl -fsSL "$current_url" || echo "")
+        if [ -z "$response" ]; then
+            low=$((mid + 1)) # Skip to upper half if the page is invalid
+            continue
+        fi
+
+        # Extract stable tags
         page_tags=$(fetch_stable_tags_from_page "$response")
-
-        # Add stable tags from this page to the list, ensuring uniqueness
-        stable_tags+=($page_tags)
-
-        # Check if stable tags were found
-        if [ -n "$page_tags" ]; then            
-            # Find the latest stable version from the tags found
-            latest_version=$(printf "%s\n" "${stable_tags[@]}" | sort -V | uniq | tail -n 1)
-
-            # If a stable tag is found, we need to narrow the search to the lower half
-            high=$((mid - 1))
+        if [ -n "$page_tags" ]; then
+            stable_tags+=($page_tags)
+            high=$((mid - 1)) # Search lower half for potentially newer tags
         else
-            # No stable tags found, move forward to the next interval (upper half)
-            low=$((mid + 1))
+            low=$((mid + 1)) # Search upper half
         fi
     done
 
-    if [ -n "$latest_version" ]; then
-        echo "${latest_version}"
+    # Calculate elapsed time
+    end_time=$(date +%s%N)
+    elapsed_ns=$((end_time - start_time))
+    elapsed_sec=$(echo "scale=3; $elapsed_ns / 1000000000" | bc)
+
+    # Display time taken
+    echo "⏱ Time taken: ${elapsed_sec} seconds"
+
+
+    # Find the latest stable version
+    if [ ${#stable_tags[@]} -gt 0 ]; then
+        latest_version=$(printf "%s\n" "${stable_tags[@]}" | sort -V | uniq | tail -n 1)
+        echo "Latest version for $image_name: $latest_version"
     else
-        echo "latest"
+        echo "No stable version found for $image_name."
     fi
 }
 
 # Validate input
-if [ -z "$1" ]; then
-    echo "Usage: $0 <image_name>"
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <image_name1> <image_name2> ..."
     exit 1
 fi
 
-# Call the function to check if the image exists in the registry
-check_image_exists "$1"
+# Measure execution time
+start_time=$(date +%s%N)
 
-# Call the function to get the latest stable version of the image
-get_latest_stable_version "$1"
+# Run for each image in parallel
+for image_name in "$@"; do
+    get_latest_stable_version "$image_name" &  # Run in background
+done
+
+# Wait for all background jobs to complete
+wait
+
+end_time=$(date +%s%N)
+
+# Calculate elapsed time
+elapsed_ns=$((end_time - start_time))
+elapsed_sec=$(echo "scale=3; $elapsed_ns / 1000000000" | bc)
+
+# Display time taken
+echo "⏱ Time taken: ${elapsed_sec} seconds"
