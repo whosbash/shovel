@@ -224,38 +224,53 @@ is_package_installed() {
   dpkg -l | grep -q "$package"
 }
 
-# Function to run apt commands and handle their results
-run_apt_command() {
+# General function to run a command and display its output
+run_command() {
   local command="$1"
   local current_step="$2"
   local total_steps="$3"
   local step_message="$4"
+  local log_file="/tmp/command_log.txt"
+  local allow_dangerous_commands="${5:no}"
+
+  # Ensure we don't run any destructive commands unintentionally unless explicitly allowed
+  if [[ "$allow_dangerous_commands" != "yes" && "$command" =~ (rm|mv|dd|reboot|shutdown) ]]; then
+    echo "Error: This function does not support potentially destructive commands."
+    return 1
+  fi
 
   # Format and display step message
   format_message "info" "$step_message" true
 
-  # Run the command and process its output line by line
-  DEBIAN_FRONTEND=noninteractive $command 2>&1 | while IFS= read -r line; do
+  # Run the command and process its output line by line, logging both stdout and stderr
+  {
+    DEBIAN_FRONTEND=noninteractive $command
+  } 2>&1 | while IFS= read -r line; do
     # Format and display each line as it is outputted
     if [[ "$line" =~ ^(Hit|Reading|Fetched|Get|Reading|Building|Done|Fetched).* ]]; then
       format_message "info" "$line"
     else
       format_message "normal" "$line"
     fi
-  done
+  done | tee "$log_file"
 
   # Get the exit status of the last command run
   exit_code=$?
 
   # Handle command exit status
   if [ $exit_code -eq 0 ]; then
-    format_message "success" "Step $current_step/$total_steps succeeded: $step_message" true
+    format_message "success" "[$current_step/$total_steps] $step_message succeeded" true
   else
-    format_message "error" "Step $current_step/$total_steps failed: $step_message" true
+    format_message "error" "[$current_step/$total_steps] $step_message failed" true
+    cat "$log_file" | format_message "error" "Command output:"
   fi
+
+  # Clean up the log file if needed
+  rm -f "$log_file"
 
   return $exit_code
 }
+
 
 # Function to wait for a specified number of seconds
 wait_secs() {
@@ -295,7 +310,7 @@ install_package() {
     info "Starting installation of package: $package"
 
     # Try to install the package and check for success
-    if ! DEBIAN_FRONTEND=noninteractive apt install "$package" -yq \
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install "$package" -yq \
       --no-install-recommends >/dev/null 2>&1; then
       error "Failed to install package: $package. Check logs for more details."
       exit 1
@@ -709,7 +724,7 @@ convert_json_array_to_base64_array() {
 # Function to validate the input and return errors for invalid fields
 validate_value() {
   local value="$1"
-  local validate_fn="${2-'validate_empty_value'}"
+  local validate_fn="${2-validate_empty_value}"
 
   # Capture the output from the validation function
   error_message=$($validate_fn "$value")
@@ -760,7 +775,7 @@ create_prompt_item() {
   local description="$3"
   local value="$4"
   local required="$5"
-  local validate_fn="${6-'validate_empty_value'}"
+  local validate_fn="${6-validate_empty_value}"
 
   # Check if the item is required and the value is empty
   if [[ "$required" == "yes" && -z "$value" ]]; then
@@ -769,8 +784,6 @@ create_prompt_item() {
     echo "$error_obj"
     return 1
   fi
-
-  echo "$($validate_fn "$value")" >&2
 
   # Validate the value using the provided validation function
   validation_output=$(validate_value "$value" "$validate_fn" 2>&1)
@@ -1522,12 +1535,21 @@ wait_for_input() {
 
 ############################### BEGIN OF GENERAL DEPLOYMENT FUNCTIONS ##############################
 
+# Function to check if Docker Swarm is active
+is_swarm_active() {
+  if docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q 'active'; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 # Function to check if a stack exists by name
 stack_exists() {
   local stack_name="$1"
   # Check if the stack exists by listing stacks and filtering by name
   if docker stack ls --format '{{.Name}}' | grep -q "^$stack_name$"; then
-    return 0 # Stack exists
+    return 0
   else
     return 1 # Stack does not exist
   fi
@@ -2087,22 +2109,50 @@ check_dependency_cycles() {
   fi
 }
 
-# Function to clean docker environment
+# Function to clean docker environment with one confirmation step
+# Function to clean docker environment with one confirmation step
 sanitize() {
-  # Prune unused containers, networks, volumes, and build cache
-  docker system prune --all --volumes
+  total_steps=5
 
-  # Remove any dangling (untagged) images
-  docker images --filter "dangling=true" -q | xargs -r docker rmi
+  # Ask for confirmation before proceeding
+  explanation="This will prune unused containers, networks, volumes, images, and build cache"
+  confirmation_query="Are you sure you want to continue? [y/N]"
+  message="$explanation. $confirmation_query"
+  formatted_message="$(format_message "question" "$message")"
+  
+  read -p "$formatted_message" confirm
 
-  # Optional: Remove stopped containers, if any remain (for extra cleanup)
-  docker container prune
+  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    # Run commands with explicit permission for destructive operations
+	message="Pruning unused containers, networks, volumes, and build cache"
+    command="docker system prune --all --volumes -f"
+	run_command "$command" 1 total_steps "$message" "yes" 
 
-  # Optional: Remove unused Docker networks
-  docker network prune
+	message="Removing dangling images"
+	# Check if there are any dangling images and remove them
+	dangling_images=$(docker images --filter 'dangling=true' -q)
+	if [ -n "$dangling_images" ]; then
+		command="docker images --filter 'dangling=true' -q | xargs docker rmi -f"
+		run_command "$command" 2 $total_steps "$message" "yes"
+		echo "$dangling_images" | xargs docker rmi -f
+	else
+		step_warning 2 $total_steps "No dangling images found."
+	fi
 
-  # Optional: Remove orphaned volumes (if system prune misses any)
-  docker volume prune
+	message="Removing stopped containers"
+	command="docker container prune -f"
+	run_command "$command" 3 $total_steps "$message" "yes"
+
+	message="Removing unused Docker networks"
+	command="docker network prune -f"
+	run_command "$command" 4 $total_steps "$message" "yes"
+
+	message="Removing orphaned volumes"
+	command="docker volume prune -f"
+	run_command "$command" 5 $total_steps "$message" "yes"
+  else
+    failure "Aborted by user."
+  fi
 }
 
 # Function to create a Docker network if it doesn't exist
@@ -3073,12 +3123,12 @@ update_and_install_packages() {
   # Step 1: Update the system
   step_message="Updating system and upgrading packages"
   step_progress 1 $total_steps "$step_message"
-  run_apt_command "apt update -yq" 1 $total_steps "$step_message"
+  run_command "apt-get update -yq" 1 $total_steps "$step_message"
 
   # Step 3: Autoclean the system
   step_message="Cleaning up package cache"
   step_progress 2 $total_steps "$step_message"
-  run_apt_command "apt autoclean -yq --allow-downgrades" 3 $total_steps "$step_message"
+  run_command "apt-get autoclean -yq --allow-downgrades" 2 $total_steps "$step_message"
 
   # Check for apt locks on installation
   wait_apt_lock 5 60
@@ -3182,7 +3232,7 @@ get_server_info() {
 
 # Function to initialize the server information
 initialize_server_info() {
-  total_steps=5
+  total_steps=3
   server_filename="server_info.json"
 
   # Step 1: Check if server_info.json exists and is valid
@@ -3199,7 +3249,7 @@ initialize_server_info() {
     server_info_json=$(get_server_info)
 
     # Save the server information to a JSON file
-    cat "$server_info_json" >"$server_filename"
+    echo "$server_info_json" >"$server_filename"
     info "Server information saved to file $$server_filename"
   fi
 
@@ -3226,10 +3276,13 @@ initialize_server_info() {
   # Initialize Docker Swarm
   step_message="Docker Swarm initialization"
   step_progress 3 $total_steps "$step_message"
-  if docker info 2>&1 | grep -q 'Swarm: active'; then
-    step_warning 3 $total_steps "$step_message"
+
+  if is_swarm_active; then
+    step_warning 3 $total_steps "Swarm is already active"
   else
-    docker swarm init --advertise-addr "$(get_ip)" >/dev/null 2>&1
+    # Initialize Swarm with the current IP address
+    local_ip=$(get_ip)
+    docker swarm init --advertise-addr "$local_ip" >/dev/null 2>&1
     handle_exit $? 3 $total_steps "$step_message"
   fi
 
@@ -3317,26 +3370,31 @@ choose_stack_to_install() {
 
     # Navigation options
     if ((total_pages > 1)); then
-      local navigation_options="[P] Previous Page [N] Next Page [E] Exit"
+      local navigation_options="[p/P] Previous Page [n/N] Next Page [e/E] Exit"
       highlight ""
       highlight "$navigation_options"
     else
       highlight ""
-      highlight "[E] Exit"
+      highlight "[e/E] Exit"
     fi
 
     # Read user input
     local choice_message="$(format_message "highlight" "Enter your choice: ")"
     read -p "$choice_message" choice
 
+	options="between $((start_index + 1)) and $((end_index + 1)) or press 'e' to exit."
+	explanation="Select an option $options"
+	choice_error_message="Invalid choice. $explanation"
+
     # Handle navigation and selection
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
-      if ((choice >= 1 && choice <= total_items)); then
+      if ((choice >= start_index && choice <= end_index)); then
         local selected_stack_name="${stack_names[$((choice - 1))]}"
         deploy_stack "$selected_stack_name"
         return
       else
-        error "Invalid choice. Please try again."
+        error "$choice_error_message"
+		wait_secs 1
       fi
     elif ((total_pages > 1)) && [[ "$choice" == "P" || "$choice" == "p" ]]; then
       if ((current_page > 1)); then
@@ -3351,10 +3409,12 @@ choose_stack_to_install() {
         current_page=1 # Wrap to the first page
       fi
     elif [[ "$choice" == "E" || "$choice" == "e" ]]; then
+	  clear
       farewell_message
       exit 0
     else
-      error "Invalid input. Please try again."
+      error "$choice_error_message"
+	  wait_secs 1
     fi
   done
 }
@@ -3369,7 +3429,7 @@ usage() {
   echo "  -u, --startup           Startup server information."
   echo "  -s, --stack STACK       Specify which stack to install: {${stack_names[*]}}."
   echo "  -h, --help              Display this help message and exit."
-  exit 1 # Use exit 1 to indicate an error with the options
+  exit 1
 }
 
 # Parse command-line arguments
@@ -3460,5 +3520,3 @@ main() {
 
 # Call the main function
 main "$@"
-
-# echo $(get_ip_collection_item)
