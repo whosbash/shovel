@@ -3352,30 +3352,39 @@ get_server_info() {
 
 # Function to initialize the server information
 initialize_server_info() {
-  total_steps=3
+  total_steps=5
   server_filename="server_info.json"
 
   # Step 1: Check if server_info.json exists and is valid
+  message="Initialization of server information..."
+  step_progress 1 $total_steps "$message"
   if [[ -f "$server_filename" ]]; then
     server_info_json=$(cat "$server_filename" 2>/dev/null)
     if jq -e . >/dev/null 2>&1 <<<"$server_info_json"; then
-      info "Valid server_info.json found. Using existing information."
+      step_info 1 $total_steps "Valid server_info.json found. Using existing information."
     else
-      warning "Content on file $server_filename is invalid. Reinitializing..."
+      step_error "Content on file $server_filename is invalid. Reinitializing..."
       server_info_json=$(get_server_info)
     fi
-  else
-    info "File $server_filename not found. Retrieving server information..."
+  else  
     server_info_json=$(get_server_info)
 
     # Save the server information to a JSON file
     echo "$server_info_json" >"$server_filename"
-    info "Server information saved to file $$server_filename"
+    step_success 1 $total_steps "Server information saved to file $server_filename"
   fi
 
   # Extract server_name and network_name
-  server_name=$(echo "$server_info_json" | jq -r '.[0].server_name')
-  network_name=$(echo "$server_info_json" | jq -r '.[0].network_name')
+  server_name=$(\
+    echo "$server_info_json" | \
+    jq -r '.[] | select(.name=="server_name") | .value'
+  )
+  network_name=$(
+    echo "$server_info_json" | 
+    jq -r '.[] | select(.name=="network_name") | .value'
+  )
+
+  # Output results
   if [[ -z "$server_name" || -z "$network_name" ]]; then
     error "Missing server_name or network_name in file $server_filename"
     exit 1
@@ -3383,27 +3392,39 @@ initialize_server_info() {
 
   # Set Hostname
   step_message="Set Hostname"
-  step_progress 1 $total_steps "$step_message"
+  step_progress 2 $total_steps "$step_message"
   hostnamectl set-hostname "$server_name" >/dev/null 2>&1
-  handle_exit $? 1 $total_steps "$step_message"
+  handle_exit $? 2 $total_steps "$step_message"
 
   # Update /etc/hosts
-  step_message="Add name to server in hosts file at path /etc/hosts"
-  step_progress 2 $total_steps "$step_message"
+  step_message="Add name to server name in hosts file at path /etc/hosts"
+  step_progress 3 $total_steps "$step_message"
   sed -i "s/127.0.0.1[[:space:]]localhost/127.0.0.1 $server_name/g" /etc/hosts >/dev/null 2>&1
-  handle_exit $? 2 $total_steps "$step_message"
+  handle_exit $? 3 $total_steps "$step_message"
+
+  # Initialize Network
+  message="Network initialization"
+  step_progress 4 $total_steps "$message"
+  create_network_if_not_exists "$network_name"
+  handle_exit $? 4 $total_steps "$step_message"
 
   # Initialize Docker Swarm
   step_message="Docker Swarm initialization"
-  step_progress 3 $total_steps "$step_message"
+  step_progress 5 $total_steps "$step_message"
 
   if is_swarm_active; then
-    step_warning 3 $total_steps "Swarm is already active"
+    step_warning 5 $total_steps "Swarm is already active"
   else
     # Initialize Swarm with the current IP address
     local_ip=$(get_ip)
+
+    network_name=$(
+      echo "$server_info_json" | 
+      jq -r '.[] | select(.name=="server_ip") | .value'
+    )
+
     docker swarm init --advertise-addr "$local_ip" >/dev/null 2>&1
-    handle_exit $? 3 $total_steps "$step_message"
+    handle_exit $? 5 $total_steps "$step_message"
   fi
 
   success "Server initialization complete"
@@ -3542,15 +3563,15 @@ choose_stack_to_install() {
 
 # Display help message
 usage() {
-  echo "Usage: $0 [options]"
-  echo "Options:"
-  echo "  -i, --install           Install required packages."
-  echo "  -c, --clean             Clean docker environment."
-  echo "  -p, --prepare           Prepare the environment, same as '-i -c'."
-  echo "  -u, --startup           Startup server information."
-  echo "  -s, --stack STACK       Specify which stack to install: {${stack_names[*]}}."
-  echo "  -h, --help              Display this help message and exit."
-  exit 1
+  info "Usage: $0 [options]"
+  info "Options:"
+  info "  -i, --install           Install required packages."
+  info "  -c, --clean             Clean docker environment."
+  info "  -p, --prepare           Prepare the environment, same as '-i -c'."
+  info "  -u, --startup           Startup server information."
+  info "  -s, --stack STACK       Specify which stack to install: {${stack_names[*]}}."
+  info "  -h, --help              Display this help message and exit."
+  info 1
 }
 
 # Parse command-line arguments
@@ -3560,7 +3581,7 @@ parse_args() {
 
   # Check if getopt failed (invalid option)
   if [ $? -ne 0 ]; then
-    echo "Invalid option(s) provided."
+    info "Invalid option(s) provided."
     usage
   fi
 
