@@ -13,6 +13,8 @@ FENCE_CHAR='-'
 
 DEFAULT_LINE_LENGTH=100
 DEFAULT_FUNCTION_LENGTH=100
+DEFAULT_SPACING=1
+DEFAULT_VERBOSE=FALSE
 
 DEPENDENCIES=("curl" "awk" "sed" "shfmt")
 
@@ -283,7 +285,7 @@ check_indentation() {
 }
 
 # Code quality functions
-calculate_cyclomatic_complexity() {
+check_cyclomatic_complexity() {
     local file="$1"
     local verbose="$2"
 
@@ -324,7 +326,7 @@ check_function_complexity() {
     echo ""
 }
 
-count_logical_lines() {
+check_logical_lines() {
     local file="$1"
     local verbose="$2"
 
@@ -339,7 +341,86 @@ count_logical_lines() {
     echo ""
 }
 
-calculate_nesting_depth() {
+check_function_spacing() {
+    local file="$1"
+    local spacing="$2"
+
+    # Validate the input file
+    if [[ ! -f "$file" ]]; then
+        echo "File not found: $file"
+        return 1
+    fi
+
+    # Read the file content
+    local content
+    content=$(<"$file")
+
+    # Extract function definitions (with opening and closing brace positions)
+    local functions
+    local pattern='function [a-zA-Z_][a-zA-Z0-9_]*\(\)'
+    functions=$(echo "$content" | grep -nE "$pattern" | awk -F: '{print $1, $0}')
+
+    # Check intervals between functions
+    local prev_end_line_number=0
+    local curr_start_line_number=0
+    local prev_function=""
+    local curr_function=""
+
+    while read -r line; do
+        # Extract the line number and function definition
+        curr_start_line_number=$(echo "$line" | awk '{print $1}')
+
+        # Remove the line number from the function
+        curr_function=$(echo "$line" | awk '{$1=""; print $0}' | xargs)
+
+        # Only proceed if there's a previous function (i.e., not the first function)
+        if [[ 
+            "$prev_end_line_number" -gt 0 && \
+            "$curr_start_line_number" -gt "$prev_end_line_number" \
+        ]]; then
+            # Find the closing curly brace of the previous function
+            local prev_end_brace_line
+            prev_end_brace_line=$(
+                sed -n "${prev_end_line_number},${curr_start_line_number}p" "$file" | \
+                grep -n -m 1 "}" | cut -d: -f1
+            )
+
+            # Edge case: If no closing brace is found, use the previous line number
+            if [[ -z "$prev_end_brace_line" ]]; then
+                prev_end_brace_line=$prev_end_line_number
+            else
+                prev_end_brace_line=$((prev_end_line_number + prev_end_brace_line - 1))
+            fi
+
+            # Count blank lines between the previous closing brace and the current opening brace
+            local blank_lines
+            blank_lines=$(
+                sed -n "${prev_end_brace_line},${curr_start_line_number}p" "$file" | 
+                grep -c '^$'
+            )
+
+            # Construct message and check if the spacing violates
+            location="Between functions at lines $prev_end_line_number and $curr_start_line_number"
+            report="there are $blank_lines blank lines"
+            message="$location, $report"
+
+            if [[ "$spacing" == "1" && "$blank_lines" -ne 1 ]]; then
+                echo "$message (should be 1)."
+            elif [[ "$spacing" == "2" && "$blank_lines" -ne 2 ]]; then
+                echo "$message (should be 2)."
+            fi
+        fi
+
+        # Update previous function's line number and definition
+        prev_end_line_number="$curr_start_line_number"
+        prev_function="$curr_function"
+
+    done <<< "$functions"
+
+    print_message "$COLOR_GREEN" "Spacing check completed."
+}
+
+check_nesting_depth() {
     local file="$1"
     local verbose="$2"
 
@@ -368,7 +449,7 @@ calculate_nesting_depth() {
     echo ""
 }
 
-find_large_lines() {
+check_large_lines() {
     local file="$1"
     local max_length="$2"
     local verbose="$3"
@@ -394,6 +475,7 @@ find_large_lines() {
     # If any large lines were found, print them in yellow
     if [[ -n "$output" ]]; then
         print_message "$COLOR_YELLOW" "$output"
+
         # Count how many lines were found
         local lines_found=$(echo "$output" | grep -c "characters")
         increment_warnings "$lines_found"
@@ -408,6 +490,7 @@ find_large_lines() {
     echo ""
 }
 
+# Function to check the length of functions
 check_function_length() {
     local file="$1"
     local max_length="$2"
@@ -487,14 +570,16 @@ process_checks() {
     local file="$1"
     local max_line_length="${2:-$DEFAULT_LINE_LENGTH}"
     local max_function_length="${3:-$DEFAULT_FUNCTION_LENGTH}"
-    local verbose="$4"
+    local spacing="${4:-$DEFAULT_SPACING}"
+    local verbose="${5:-DEFAULT_VERBOSE}"
 
-    calculate_cyclomatic_complexity "$file" "$verbose"
-    count_logical_lines "$file" "$verbose"
-    calculate_nesting_depth "$file" "$verbose"
-    find_large_lines "$file" "$max_line_length" "$verbose"
+    check_cyclomatic_complexity "$file" "$verbose"
+    check_logical_lines "$file" "$verbose"
+    check_nesting_depth "$file" "$verbose"
+    check_large_lines "$file" "$max_line_length" "$verbose"
     check_function_length "$file" "$max_function_length" "$verbose"
     check_function_complexity "$file" "$verbose"
+    check_function_spacing "$file" "$spacing" "$verbose" 
     check_best_practices "$file" "$verbose"
     check_dependencies "$file" "$verbose"
     check_todo_comments "$file" "$verbose"
@@ -502,27 +587,31 @@ process_checks() {
 }
 
 process_file() {
-    local max_line_length="$2"
-    local max_function_length="$2"
-    local verbose="$3"
-    local file="$4"
+    local verbose="${1:-DEFAULT_VERBOSE}"
+    local max_line_length="${2:-$DEFAULT_LINE_LENGTH}"
+    local max_function_length="${3:-$DEFAULT_FUNCTION_LENGTH}"
+    local spacing="${4:-$DEFAULT_SPACING}"
+
+    local file="$5"
 
     print_message "$COLOR_BLUE" "Processing file: $file"
-    process_checks "$file" "$verbose"
+    process_checks "$file" "$max_line_length" "$max_function_length" "$spacing" "$verbose"
     print_message "$COLOR_GREEN" "Processing completed for file: $file"
 }
 
 process_multiple_files() {
-    local verbose="$1"
-    local max_line_length="$2"
-    local max_function_length="$3"
+    local max_line_length="${1:-$DEFAULT_LINE_LENGTH}"
+    local max_function_length="${2:-$DEFAULT_FUNCTION_LENGTH}"
+    local spacing="${3:-$DEFAULT_SPACING}"
+    local verbose="${4:-DEFAULT_VERBOSE}"
 
     shift
     local files=("$@")
 
     # Process each file without sourcing the script
     for file in "${files[@]}"; do
-        process_file "$file" "$verbose"
+        process_file "$max_line_length" "$max_function_length" "$spacing" "$verbose" "$file"
+        "$verbose"
     done
 }
 
@@ -535,11 +624,13 @@ usage() {
     exit 0
 }
 
+
 # Function to parse arguments and initiate checks
 parse_arguments() {
     local verbose=false
     local max_line_length="$DEFAULT_LINE_LENGTH"
     local max_function_length="$DEFAULT_FUNCTION_LENGTH"
+    local spacing="$DEFAULT_SPACING"
     local files=()
 
     # Define getopt options
@@ -570,6 +661,10 @@ parse_arguments() {
             max_function_length="$2"
             shift 2
             ;;
+        -s | --spacing)
+            spacing="$2"
+            shift
+            ;;
         --)
             shift
             break
@@ -596,6 +691,12 @@ parse_arguments() {
         exit 1
     fi
 
+    # Ensure spacing is either 1 or 2
+    if [[ "$spacing" != "1" && "$spacing" != "2" ]]; then
+        echo "Error: Spacing must be '1' or '2'."
+        exit 1
+    fi
+
     # Ensure at least one file is provided
     if [[ ${#files[@]} -eq 0 ]]; then
         echo "Error: No files provided."
@@ -604,9 +705,10 @@ parse_arguments() {
 
     # Process files
     if [[ ${#files[@]} -eq 1 ]]; then
-        process_file "$verbose" "$max_line_length" "$max_function_length" "${files[0]}"
+        process_file "$verbose" "$max_line_length" "$max_function_length" "$spacing" "${files[0]}"
     else
-        process_multiple_files "$verbose" "$max_line_length" "$max_function_length" "${files[@]}"
+        process_multiple_files \
+            "$verbose" "$max_line_length" "$max_function_length" "$spacing" "${files[@]}"
     fi
 
     # Summary report

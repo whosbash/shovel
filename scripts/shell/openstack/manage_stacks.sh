@@ -63,7 +63,7 @@ ITEMS_PER_PAGE=10
 
 ################################ BEGIN OF GENERAL UTILITARY FUNCTIONS ##############################
 
-# Example of safe input usage
+# Function to decode JSON and base64
 query_json64() {
   local item="$1"
   local field="$2"
@@ -81,7 +81,7 @@ random_string() {
   echo "$word"
 }
 
-# Validate if a value is empty
+# Function to validate empty values
 validate_empty_value() {
   local value="$1"
   if [[ -z "$value" ]]; then
@@ -96,6 +96,23 @@ validate_empty_value() {
 extract_variables() {
   local compose_string="$1"
   echo "$compose_string" | grep -oE '\{\{[a-zA-Z0-9_]+\}\}' | sed 's/[{}]//g' | sort -u
+}
+
+# Function to replace variables in a template
+replace_variables_in_template() {
+  local template="$1"
+  declare -n variables="$2" # Associative array passed by reference
+
+  # Use a safe delimiter and avoid external `sed` for portability
+  for key in "${!variables[@]}"; do
+    value="${variables[$key]}"
+
+    # Replace instances of {{KEY}} in the template
+    template="${template//\{\{$key\}\}/$value}"
+  done
+
+  # Output the substituted template
+  echo "$template"
 }
 
 # Function to validate name values with extensive checks
@@ -139,6 +156,7 @@ validate_name_value() {
   return 0
 }
 
+# Function to validate email values
 validate_email_value() {
   local value="$1"
 
@@ -151,6 +169,7 @@ validate_email_value() {
   return 0
 }
 
+# Function to validate integer values
 validate_integer_value() {
   local value="$1"
 
@@ -163,6 +182,7 @@ validate_integer_value() {
   return 0
 }
 
+# Function to validate port availability
 validate_port_availability() {
   local port="$1"
 
@@ -188,6 +208,7 @@ validate_port_availability() {
   fi
 }
 
+# Function to find the next available port
 find_next_available_port() {
   local trigger_port="$1"
   local current_port="$trigger_port"
@@ -230,7 +251,7 @@ is_package_installed() {
   dpkg -l | grep -q "$package"
 }
 
-# General function to run a command and display its output
+# Function to run a command and display its output
 run_command() {
   local command="$1"
   local current_step="$2"
@@ -298,7 +319,8 @@ clear_line() {
 
 # Function to clear multiple previous lines
 clear_lines() {
-  local lines=$1 # Number of lines to clear
+  # Number of lines to clear
+  local lines=$1
   for i in $(seq 1 "$lines"); do
     clear_line
   done
@@ -402,7 +424,7 @@ get_status_icon() {
   case "$type" in
   "success") echo "🌟" ;;   # Bright star for success
   "error") echo "🔥" ;;     # Fire icon for error
-  "warning") echo "⚠️" ;;  # Lightning for warning
+  "warning") echo "⚠️" ;;   # Lightning for warning
   "info") echo "💡" ;;      # Light bulb for info
   "highlight") echo "🌈" ;; # Rainbow for highlight
   "debug") echo "🔍" ;;     # Magnifying glass for debug
@@ -1351,6 +1373,7 @@ append_to_json_array() {
   echo "$json_array" | jq ". += [$json_object]"
 }
 
+# Function to sort an array based on another array
 sort_array_according_to_other_array() {
   local array1="$1"
   local array2="$2"
@@ -1376,7 +1399,7 @@ convert_array_to_json() {
   echo "$json"
 }
 
-# Save an associative array to a JSON file
+# Function to save an associative array to a JSON file
 save_array_to_json() {
   local file_path="$1" # File path to save the JSON data
   shift                # Remove the first argument, leaving only the associative array parameters
@@ -1417,7 +1440,7 @@ write_json() {
   return 0
 }
 
-# Generic function to load JSON from a file or fallback to a default JSON
+# Function to load JSON from a file
 load_json() {
   local config_file="$1"
   local config_output
@@ -1441,7 +1464,7 @@ load_json() {
   fi
 }
 
-# Generic function to load JSON from a file or fallback to a default JSON
+# Function to load JSON from a file
 load_json() {
   local config_file="$1"
   local config_output
@@ -1465,7 +1488,7 @@ load_json() {
   fi
 }
 
-# Helper function to load JSON and exit if missing or invalid
+# Function to load JSON and exit if missing or invalid
 load_or_fail_json() {
   local config_file="$1"
   local config
@@ -1542,9 +1565,9 @@ wait_for_input() {
   read -rp "$prompt_message" user_input
 }
 
-################################# END OF GENERAL UTILITARY FUNCTIONS ###############################
+################################# END OF GENERAL UTILITARY FUNCTIONS ##############################
 
-############################### BEGIN OF GENERAL DEPLOYMENT FUNCTIONS ##############################
+############################### BEGIN OF GENERAL DEPLOYMENT FUNCTIONS #############################
 
 # Function to check if Docker Swarm is active
 is_swarm_active() {
@@ -1599,13 +1622,12 @@ get_latest_stable_version() {
   local stable_tags=()
   local latest_version=""
 
-  start_time=$(date +%s%N)
-
   # Set the correct base URL
+  base_url="https://hub.docker.com/v2/repositories"
   if [ "$(is_official_image "$image_name")" == "true" ]; then
-    base_url="https://hub.docker.com/v2/repositories/library/${image_name}/tags?page_size=100"
+    base_url="$base_url/library/${image_name}/tags?page_size=100"
   else
-    base_url="https://hub.docker.com/v2/repositories/${image_name}/tags?page_size=100"
+    base_url="$base_url/${image_name}/tags?page_size=100"
   fi
 
   # Fetch the first page to determine total pages
@@ -1645,14 +1667,6 @@ get_latest_stable_version() {
       low=$((mid + 1))
     fi
   done
-
-  # Calculate elapsed time
-  end_time=$(date +%s%N)
-  elapsed_ns=$((end_time - start_time))
-  elapsed_sec=$(echo "scale=3; $elapsed_ns / 1000000000" | bc)
-
-  # Display time taken
-  echo "⏱ Time taken: ${elapsed_sec} seconds"
 
   # Find the latest stable version
   if [ ${#stable_tags[@]} -gt 0 ]; then
@@ -1798,6 +1812,7 @@ get_api_url() {
   echo "https://$url/api/$resource"
 }
 
+# Function to check if Portainer credentials are correct
 is_portainer_credentials_correct() {
   local portainer_url="$1"
   local username="$2"
@@ -2112,23 +2127,6 @@ build_stack_info() {
   echo "$config_path $compose_path $compose_func"
 }
 
-# Function to replace variables in a template
-replace_variables_in_template() {
-  local template="$1"
-  declare -n variables="$2" # Associative array passed by reference
-
-  # Use a safe delimiter and avoid external `sed` for portability
-  for key in "${!variables[@]}"; do
-    value="${variables[$key]}"
-
-    # Replace instances of {{KEY}} in the template
-    template="${template//\{\{$key\}\}/$value}"
-  done
-
-  # Output the substituted template
-  echo "$template"
-}
-
 # Function to validate a Docker Compose file
 validate_compose_file() {
   local compose_file="$1"
@@ -2228,7 +2226,6 @@ check_dependency_cycles() {
   fi
 }
 
-# Function to clean docker environment with one confirmation step
 # Function to clean docker environment with one confirmation step
 sanitize() {
   total_steps=5
@@ -2396,6 +2393,7 @@ load_or_fail_stack_config() {
   echo "$config"
 }
 
+# Function to generate a JSON configuration for a service
 generate_config_schema() {
   local required_fields="$1"
 
@@ -2421,7 +2419,7 @@ generate_config_schema() {
   echo "$schema"
 }
 
-# Example function to extract required fields and generate schema
+# Function to extract required fields and generate schema
 validate_stack_config() {
   local config_json="$1"
   local stack_name="$2" # Add stack_name as an argument to the function
@@ -2594,6 +2592,7 @@ create_postgres_database() {
   fi
 }
 
+# Function to generate the set-up actions for n8n
 generate_set_up_actions_n8n() {
   local n8n_config_json=$1
   local n8n_instance_id=$2 # New parameter for the n8n instance identifier
@@ -2846,6 +2845,7 @@ generate_config_n8n() {
 
 ####################################### BEGIN OF COMPOSE FILES #####################################
 
+# Function to generate compose file for Traefik
 compose_traefik() {
   CERT_PATH="/etc/traefik/letsencrypt/acme.json"
   cat <<EOL
@@ -2920,6 +2920,7 @@ networks:
 EOL
 }
 
+# Function to generate compose file for Portainer
 compose_portainer() {
   cat <<EOL
 services:
@@ -2978,7 +2979,7 @@ networks:
 EOL
 }
 
-# Function to create the Redis YAML file
+# Function to generate compose file for Redis
 compose_redis() {
   cat <<EOL
 services:
@@ -3008,7 +3009,7 @@ networks:
 EOL
 }
 
-# Function to create the Postgres YAML file
+# Function to generate compose file for Postgres
 compose_postgres() {
   cat <<EOL
 services:
@@ -3036,7 +3037,7 @@ networks:
 EOL
 }
 
-# Function to create the N8N YAML file
+# Function to generate compose file for N8N
 compose_n8n() {
   cat <<EOL
 version: '3.8'
@@ -3453,6 +3454,7 @@ farewell_message() {
   celebrate ""
 }
 
+# Function to choose the stack to install
 choose_stack_to_install() {
   # Constants for pagination
   local total_items=${#stack_labels[@]}
