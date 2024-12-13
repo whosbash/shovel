@@ -199,8 +199,7 @@ format() {
 }
 
 # Function to display a message with improved formatting
-
-echo_message() {
+display() {
 	local type="$1"
 	local text="$2"
 	local timestamp="${3:-$HAS_TIMESTAMP}"
@@ -212,105 +211,105 @@ echo_message() {
 success() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'success' "$message" $timestamp >&2
+	display 'success' "$message" $timestamp >&2
 }
 
 # Function to display error formatted messages
 error() {
 	local message="$1"                       # Step message
 	local timestamp=""${2:-$HAS_TIMESTAMP}"" # Optional timestamp flag
-	echo_message 'error' "$message" $timestamp >&2
+	display 'error' "$message" $timestamp >&2
 }
 
 # Function to display warning formatted messages
 warning() {
 	local message="$1"                       # Step message
 	local timestamp=""${2:-$HAS_TIMESTAMP}"" # Optional timestamp flag
-	echo_message 'warning' "$message" $timestamp >&2
+	display 'warning' "$message" $timestamp >&2
 }
 
 # Function to display info formatted messages
 info() {
 	local message="$1"                       # Step message
 	local timestamp=""${2:-$HAS_TIMESTAMP}"" # Optional timestamp flag
-	echo_message 'info' "$message" $timestamp >&2
+	display 'info' "$message" $timestamp >&2
 }
 
 # Function to display highlight formatted messages
 highlight() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'highlight' "$message" $timestamp >&2
+	display 'highlight' "$message" $timestamp >&2
 }
 
 # Function to display debug formatted messages
 debug() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'debug' "$message" $timestamp >&2
+	display 'debug' "$message" $timestamp >&2
 }
 
 # Function to display critical formatted messages
 critical() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'critical' "$message" $timestamp >&2
+	display 'critical' "$message" $timestamp >&2
 }
 
 # Function to display note formatted messages
 note() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'note' "$message" $timestamp >&2
+	display 'note' "$message" $timestamp >&2
 }
 
 # Function to display important formatted messages
 important() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'important' "$message" $timestamp >&2
+	display 'important' "$message" $timestamp >&2
 }
 
 # Function to display wait formatted messages
 wait() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'wait' "$message" $timestamp >&2
+	display 'wait' "$message" $timestamp >&2
 }
 
 # Function to display wait formatted messages
 question() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'question' "$message" $timestamp >&2
+	display 'question' "$message" $timestamp >&2
 }
 
 # Function to display celebrate formatted messages
 celebrate() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'celebrate' "$message" $timestamp >&2
+	display 'celebrate' "$message" $timestamp >&2
 }
 
 # Function to display progress formatted messages
 progress() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'progress' "$message" $timestamp >&2
+	display 'progress' "$message" $timestamp >&2
 }
 
 # Function to display failure formatted messages
 failure() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'failure' "$message" $timestamp >&2
+	display 'failure' "$message" $timestamp >&2
 }
 
 # Function to display tip formatted messages
 tip() {
 	local message="$1"                     # Step message
 	local timestamp="${2:-$HAS_TIMESTAMP}" # Optional timestamp flag
-	echo_message 'tip' "$message" $timestamp >&2
+	display 'tip' "$message" $timestamp >&2
 }
 
 # Function to trim leading/trailing spaces
@@ -661,40 +660,53 @@ create_prompt_item() {
 
 # Function to prompt for user input
 prompt_for_input() {
-	local item="$1"
+    local item="$1"
 
-	name=$(query_json64 "$item" '.name')
-	label=$(query_json64 "$item" '.label')
-	description=$(query_json64 "$item" '.description')
-	required=$(query_json64 "$item" '.required')
+    name=$(query_json64 "$item" '.name')
+    label=$(query_json64 "$item" '.label')
+    description=$(query_json64 "$item" '.description')
+    required=$(query_json64 "$item" '.required')
+    default_value=$(query_json64 "$item" '.default_value')
 
-	# Assign the 'required' label based on the 'required' field value
-	if [[ "$required" == "yes" ]]; then
-		required_label="required"
-	else
-		required_label="optional"
-	fi
+    # Assign the 'required' label based on the 'required' field value
+    if [[ "$required" == "yes" ]]; then
+        required_label="required"
+    else
+        required_label="optional"
+    fi
 
-	local general_info="Prompting $required_label variable $name: $description"
-	local explanation="Enter a value or type 'q' to quit"
-	local prompt="$general_info\n$explanation: "
-	fmt_prompt=$(format 'question' "$prompt")
+    local general_info="Prompting $required_label variable $name: $description"
+    local explanation="Enter a value, type 'q' to quit"
 
-	while true; do
-		read -rp "$fmt_prompt" value
-		if [[ "$value" == "q" ]]; then
-			echo "q"
-			return
-		fi
+    # Notify the user if a default value is provided, only if it is non-empty
+    if [[ -n "$default_value" && "$default_value" != "null" ]]; then
+        explanation="$explanation or Enter to use the default value '$default_value'"
+    fi
 
-		if [[ -n "$value" || "$required" == "no" ]]; then
-			echo "$value"
-			return
-		else
-			warning "$label is a required field. Please enter a value."
-		fi
-	done
+    local prompt="$general_info\n$explanation: "
+    fmt_prompt=$(format 'question' "$prompt")
+
+    while true; do
+        read -rp "$fmt_prompt" value
+        if [[ "$value" == "q" ]]; then
+            echo "q"
+            return
+        fi
+
+        # Use default value if input is empty and default is provided
+        if [[ -z "$value" && -n "$default_value" && "$default_value" != "null" ]]; then
+            value="$default_value"
+        fi
+
+        if [[ -n "$value" || "$required" == "no" ]]; then
+            echo "$value"
+            return
+        else
+            warning "$label is a required field. Please enter a value."
+        fi
+    done
 }
+
 
 # Function to collect and validate information
 collect_prompt_info() {
@@ -898,12 +910,13 @@ run_collection_process() {
 
 # Simulate the collection process
 items='[
-    { 
+    {
         "name": "server_name",
         "label": "Server Name",
-        "description": "The name of the server", 
+        "description": "The name of the server",
         "required": "yes",
-        "validate_fn": "validate_name_value"
+        "validate_fn": "validate_name_value",
+        "default_value": "server01"
     },
     { 
         "name": "network_name", 
