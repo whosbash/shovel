@@ -522,9 +522,9 @@ check_function_length() {
         # Detect function start with various patterns: 'function name', 'name ()', 'name {'
         if [[ "$line" =~ $pattern ]]; then
             # Capture function name from the pattern
-            function_name=$(\
+            function_name=$(
                 echo "$line" | \
-                sed -E "s/$function_name_pattern//;s/\(.*//;s/[[:space:]]*\{.*//"\
+                sed -E "s/$function_name_pattern//;s/\(.*//;s/[[:space:]]*\{.*//"
             )
 
             # Start counting lines for this function
@@ -542,7 +542,7 @@ check_function_length() {
         # Check if function length exceeds max_length
         if [[ $line_count -gt "$max_length" && $function_start -gt 0 ]]; then
             ((issues++))
-            message="Function '$function_name' exceeds $max_length lines."
+            message="Function '$function_name' exceeds $max_length lines by $((line_count-max_length)) lines."
             long_functions="$long_functions\n$message"
 
             # Optionally print verbose message
