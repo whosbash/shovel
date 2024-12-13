@@ -54,7 +54,7 @@ declare -A STYLES=(
 
 # Global variables
 HAS_TIMESTAMP=true
-DEFAULT_SERVER_NAME="default_server"
+DEFAULT_SERVER_NAME="swarm_server"
 DEFAULT_NETWORK="swarm_network"
 DEFAULT_TYPE='info'
 ITEMS_PER_PAGE=10
@@ -90,6 +90,12 @@ validate_empty_value() {
   else
     return 0
   fi
+}
+
+# Function to extract variables from a string without curly braces
+extract_variables() {
+  local compose_string="$1"
+  echo "$compose_string" | grep -oE '\{\{[a-zA-Z0-9_]+\}\}' | sed 's/[{}]//g' | sort -u
 }
 
 # Function to validate name values with extensive checks
@@ -271,7 +277,6 @@ run_command() {
   return $exit_code
 }
 
-
 # Function to wait for a specified number of seconds
 wait_secs() {
   local seconds=$1
@@ -368,12 +373,6 @@ trim() {
   echo "$1" | sed "$pattern"
 }
 
-query_64json() {
-  local item="$1"
-  local field="$2"
-  echo "$item" | base64 --decode | jq -r "$field"
-}
-
 # Function to apply color and style to a string, even if it contains existing color codes
 colorize() {
   local text="$1"
@@ -453,7 +452,7 @@ get_status_style() {
   "info") echo "italic" ;;                       # Italic for info
   "error") echo "bold,italic" ;;                 # Bold and italic for errors
   "critical") echo "bold,underline" ;;           # Bold and underline for critical
-  "warning") echo "underline" ;;                 # Underline for warnings
+  "warning") echo "italic" ;;                    # Underline for warnings
   "highlight") echo "bold,underline" ;;          # Bold and underline for highlights
   "wait") echo "dim,italic" ;;                   # Dim and italic for pending
   "important") echo "bold,underline,overline" ;; # Bold, underline, overline for important
@@ -819,51 +818,51 @@ create_prompt_item() {
 
 # Function to prompt for user input
 prompt_for_input() {
-    local item="$1"
+  local item="$1"
 
-    name=$(query_json64 "$item" '.name')
-    label=$(query_json64 "$item" '.label')
-    description=$(query_json64 "$item" '.description')
-    required=$(query_json64 "$item" '.required')
-    default_value=$(query_json64 "$item" '.default_value')
+  name=$(query_json64 "$item" '.name')
+  label=$(query_json64 "$item" '.label')
+  description=$(query_json64 "$item" '.description')
+  required=$(query_json64 "$item" '.required')
+  default_value=$(query_json64 "$item" '.default_value')
 
-    # Assign the 'required' label based on the 'required' field value
-    if [[ "$required" == "yes" ]]; then
-        required_label="required"
+  # Assign the 'required' label based on the 'required' field value
+  if [[ "$required" == "yes" ]]; then
+    required_label="required"
+  else
+    required_label="optional"
+  fi
+
+  local general_info="Prompting $required_label variable $name: $description"
+  local explanation="Enter a value, type 'q' to quit"
+
+  # Notify the user if a default value is provided, only if it is non-empty
+  if [[ -n "$default_value" && "$default_value" != "null" ]]; then
+    explanation="$explanation or Enter to use the default value '$default_value'"
+  fi
+
+  local prompt="$general_info\n$explanation: "
+  fmt_prompt=$(format 'question' "$prompt")
+
+  while true; do
+    read -rp "$fmt_prompt" value
+    if [[ "$value" == "q" ]]; then
+      echo "q"
+      return
+    fi
+
+    # Use default value if input is empty and default is provided
+    if [[ -z "$value" && -n "$default_value" && "$default_value" != "null" ]]; then
+      value="$default_value"
+    fi
+
+    if [[ -n "$value" || "$required" == "no" ]]; then
+      echo "$value"
+      return
     else
-        required_label="optional"
+      warning "$label is a required field. Please enter a value."
     fi
-
-    local general_info="Prompting $required_label variable $name: $description"
-    local explanation="Enter a value, type 'q' to quit"
-
-    # Notify the user if a default value is provided, only if it is non-empty
-    if [[ -n "$default_value" && "$default_value" != "null" ]]; then
-        explanation="$explanation or Enter to use the default value '$default_value'"
-    fi
-
-    local prompt="$general_info\n$explanation: "
-    fmt_prompt=$(format 'question' "$prompt")
-
-    while true; do
-        read -rp "$fmt_prompt" value
-        if [[ "$value" == "q" ]]; then
-            echo "q"
-            return
-        fi
-
-        # Use default value if input is empty and default is provided
-        if [[ -z "$value" && -n "$default_value" && "$default_value" != "null" ]]; then
-            value="$default_value"
-        fi
-
-        if [[ -n "$value" || "$required" == "no" ]]; then
-            echo "$value"
-            return
-        else
-            warning "$label is a required field. Please enter a value."
-        fi
-    done
+  done
 }
 
 # Function to collect and validate information
@@ -1556,6 +1555,114 @@ is_swarm_active() {
   fi
 }
 
+# Function to fetch stable tags from a response
+fetch_stable_tags_from_page() {
+  pattern='^[0-9]+\.[0-9]+\.[0-9]+$|^[0-9]+\.[0-9]+$'
+  echo "$1" | jq -r '.results[].name' | grep -E "$pattern"
+}
+
+# Determine if an image is official
+is_official_image() {
+  # Measure execution time
+  local image_name=$1
+  local response=""
+
+  # Try fetching the official image first
+  response=$(
+    curl -fsSL "https://hub.docker.com/v2/repositories/library/${image_name}" 2>/dev/null
+  )
+
+  # Check if the response contains 'name' indicating it's an official image
+  if [ $? -eq 0 ] && echo "$response" | jq -e '.name' >/dev/null 2>&1; then
+    echo "true" # It's an official image
+    return
+  fi
+
+  # If official image fails, try fetching the non-official image (user/organization image)
+  response=$(curl -fsSL "https://hub.docker.com/v2/repositories/${image_name}")
+
+  # If the response contains 'name', it's a valid (non-official) image
+  if [ $? -eq 0 ] && echo "$response" | jq -e '.name' >/dev/null 2>&1; then
+    echo "false" # It's a non-official image
+  else
+    # If neither the official nor non-official image is found, return false
+    echo "false" # Image not found
+  fi
+}
+
+# Get the latest stable version
+get_latest_stable_version() {
+  local image_name=$1
+  local base_url=""
+  local current_url=""
+  local total_count=0
+  local stable_tags=()
+  local latest_version=""
+
+  start_time=$(date +%s%N)
+
+  # Set the correct base URL
+  if [ "$(is_official_image "$image_name")" == "true" ]; then
+    base_url="https://hub.docker.com/v2/repositories/library/${image_name}/tags?page_size=100"
+  else
+    base_url="https://hub.docker.com/v2/repositories/${image_name}/tags?page_size=100"
+  fi
+
+  # Fetch the first page to determine total pages
+  response=$(curl -fsSL "$base_url" || echo "")
+  if [ -z "$response" ] || [ "$(echo "$response" | jq -r '.count')" == "null" ]; then
+    echo "Image '$image_name' not found or registry unavailable."
+    return 1
+  fi
+
+  total_count=$(echo "$response" | jq -r '.count')
+  total_pages=$(((total_count + 99) / 100))
+
+  # Perform binary search for latest stable version
+  low=1
+  high=$total_pages
+  while [ $low -le $high ]; do
+    mid=$(((low + high) / 2))
+    current_url="${base_url}&page=$mid"
+
+    # Fetch the page
+    response=$(curl -fsSL "$current_url" || echo "")
+    if [ -z "$response" ]; then
+      # Skip to upper half if the page is invalid
+      low=$((mid + 1))
+      continue
+    fi
+
+    # Extract stable tags
+    page_tags=$(fetch_stable_tags_from_page "$response")
+    if [ -n "$page_tags" ]; then
+      stable_tags+=($page_tags)
+
+      # Search lower half for potentially newer tags
+      high=$((mid - 1))
+    else
+      # Search upper half
+      low=$((mid + 1))
+    fi
+  done
+
+  # Calculate elapsed time
+  end_time=$(date +%s%N)
+  elapsed_ns=$((end_time - start_time))
+  elapsed_sec=$(echo "scale=3; $elapsed_ns / 1000000000" | bc)
+
+  # Display time taken
+  echo "⏱ Time taken: ${elapsed_sec} seconds"
+
+  # Find the latest stable version
+  if [ ${#stable_tags[@]} -gt 0 ]; then
+    latest_version=$(printf "%s\n" "${stable_tags[@]}" | sort -V | uniq | tail -n 1)
+    echo "Latest version for $image_name: $latest_version"
+  else
+    echo "No stable version found for $image_name."
+  fi
+}
+
 # Function to check if a stack exists by name
 stack_exists() {
   local stack_name="$1"
@@ -2131,37 +2238,37 @@ sanitize() {
   confirmation_query="Are you sure you want to continue? [y/N]"
   message="$explanation. $confirmation_query"
   formatted_message="$(format "question" "$message")"
-  
+
   read -p "$formatted_message" confirm
 
   if [[ "$confirm" =~ ^[Yy]$ ]]; then
     # Run commands with explicit permission for destructive operations
-	message="Pruning unused containers, networks, volumes, and build cache"
+    message="Pruning unused containers, networks, volumes, and build cache"
     command="docker system prune --all --volumes -f"
-	run_command "$command" 1 total_steps "$message" "yes" 
+    run_command "$command" 1 total_steps "$message" "yes"
 
-	message="Removing dangling images"
-	# Check if there are any dangling images and remove them
-	dangling_images=$(docker images --filter 'dangling=true' -q)
-	if [ -n "$dangling_images" ]; then
-		command="docker images --filter 'dangling=true' -q | xargs docker rmi -f"
-		run_command "$command" 2 $total_steps "$message" "yes"
-		echo "$dangling_images" | xargs docker rmi -f
-	else
-		step_warning 2 $total_steps "No dangling images found."
-	fi
+    message="Removing dangling images"
+    # Check if there are any dangling images and remove them
+    dangling_images=$(docker images --filter 'dangling=true' -q)
+    if [ -n "$dangling_images" ]; then
+      command="docker images --filter 'dangling=true' -q | xargs docker rmi -f"
+      run_command "$command" 2 $total_steps "$message" "yes"
+      echo "$dangling_images" | xargs docker rmi -f
+    else
+      step_warning 2 $total_steps "No dangling images found."
+    fi
 
-	message="Removing stopped containers"
-	command="docker container prune -f"
-	run_command "$command" 3 $total_steps "$message" "yes"
+    message="Removing stopped containers"
+    command="docker container prune -f"
+    run_command "$command" 3 $total_steps "$message" "yes"
 
-	message="Removing unused Docker networks"
-	command="docker network prune -f"
-	run_command "$command" 4 $total_steps "$message" "yes"
+    message="Removing unused Docker networks"
+    command="docker network prune -f"
+    run_command "$command" 4 $total_steps "$message" "yes"
 
-	message="Removing orphaned volumes"
-	command="docker volume prune -f"
-	run_command "$command" 5 $total_steps "$message" "yes"
+    message="Removing orphaned volumes"
+    command="docker volume prune -f"
+    run_command "$command" 5 $total_steps "$message" "yes"
   else
     failure "Aborted by user."
   fi
@@ -2761,7 +2868,7 @@ services:
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencryptresolver.acme.storage=$CERT_PATH"
-      - "--certificatesresolvers.letsencryptresolver.acme.email={{EMAIL_SSL}}"
+      - "--certificatesresolvers.letsencryptresolver.acme.email={{email_ssl}}"
       - "--log.level=DEBUG"
       - "--log.format=common"
       - "--log.filePath=/var/log/traefik/traefik.log"
@@ -2818,7 +2925,7 @@ compose_portainer() {
 services:
 
   agent:
-    image: portainer/agent:{{agent_version}} ## Versão Agent do Portainer
+    image: portainer/agent:{{agent_version}}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -2833,7 +2940,7 @@ services:
         constraints: [node.platform.os == linux]
 
   portainer:
-    image: portainer/portainer-ce:{{PORTAINER_VERSION}} 
+    image: portainer/portainer-ce:{{portainer_version}} 
     command: -H tcp://tasks.agent:9001 --tlsskipverify
 
     volumes:
@@ -2850,11 +2957,11 @@ services:
         constraints: [node.role == manager]
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.portainer.rule=Host(\`{{PORTAINER_URL}}\`)"
+        - "traefik.http.routers.portainer.rule=Host(\`{{portainer_url}}\`)"
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
         - "traefik.http.routers.portainer.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.portainer.service=portainer"
-        - "traefik.docker.network={{NETWORK_NAME}}" ## Nome da rede interna
+        - "traefik.docker.network={{network_name}}"
         - "traefik.http.routers.portainer.entrypoints=websecure"
         - "traefik.http.routers.portainer.priority=1"
 
@@ -3394,9 +3501,9 @@ choose_stack_to_install() {
     local choice_message="$(format "highlight" "Enter your choice: ")"
     read -p "$choice_message" choice
 
-	options="between $((start_index + 1)) and $((end_index + 1)) or press 'e' to exit."
-	explanation="Select an option $options"
-	choice_error_message="Invalid choice. $explanation"
+    options="between $((start_index + 1)) and $((end_index + 1)) or press 'e' to exit."
+    explanation="Select an option $options"
+    choice_error_message="Invalid choice. $explanation"
 
     # Handle navigation and selection
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
@@ -3406,7 +3513,7 @@ choose_stack_to_install() {
         return
       else
         error "$choice_error_message"
-		wait_secs 1
+        wait_secs 1
       fi
     elif ((total_pages > 1)) && [[ "$choice" == "P" || "$choice" == "p" ]]; then
       if ((current_page > 1)); then
@@ -3421,12 +3528,12 @@ choose_stack_to_install() {
         current_page=1 # Wrap to the first page
       fi
     elif [[ "$choice" == "E" || "$choice" == "e" ]]; then
-	  clear
+      clear
       farewell_message
       exit 0
     else
       error "$choice_error_message"
-	  wait_secs 1
+      wait_secs 1
     fi
   done
 }
