@@ -351,70 +351,67 @@ check_function_spacing() {
         return 1
     fi
 
+    print_header "Checking spacing of $spacing between functions"
+
     # Read the file content
     local content
     content=$(<"$file")
 
-    # Extract function definitions (with opening and closing brace positions)
+    # Extract function definitions (with line numbers)
     local functions
-    local pattern='function [a-zA-Z_][a-zA-Z0-9_]*\(\)'
-    functions=$(echo "$content" | grep -nE "$pattern" | awk -F: '{print $1, $0}')
+    local pattern='^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(\)[[:space:]]*\{'
+    functions=$(grep -nE "$pattern" "$file")
 
-    # Check intervals between functions
+    if [[ -z "$functions" ]]; then
+        echo "No functions found in the file."
+        return 0
+    fi
+
+    # Initialize variables
     local prev_end_line_number=0
     local curr_start_line_number=0
-    local prev_function=""
-    local curr_function=""
+    local prev_end_brace_line=0
 
-    while read -r line; do
-        # Extract the line number and function definition
-        curr_start_line_number=$(echo "$line" | awk '{print $1}')
+    # Read each function line-by-line
+    while IFS= read -r line; do
+        # Extract line number of the current function
+        curr_start_line_number=$(echo "$line" | cut -d: -f1)
 
-        # Remove the line number from the function
-        curr_function=$(echo "$line" | awk '{$1=""; print $0}' | xargs)
-
-        # Only proceed if there's a previous function (i.e., not the first function)
-        if [[ 
-            "$prev_end_line_number" -gt 0 && \
-            "$curr_start_line_number" -gt "$prev_end_line_number" \
-        ]]; then
-            # Find the closing curly brace of the previous function
-            local prev_end_brace_line
+        # If this is not the first function, calculate the spacing
+        if [[ $prev_end_line_number -ne 0 ]]; then
+            # Find the closing brace of the previous function
             prev_end_brace_line=$(
-                sed -n "${prev_end_line_number},${curr_start_line_number}p" "$file" | \
-                grep -n -m 1 "}" | cut -d: -f1
+                sed -n "${prev_end_line_number},${curr_start_line_number}p" "$file" | 
+                grep -n "^[[:space:]]*}" | tail -n 1 | cut -d: -f1
             )
 
-            # Edge case: If no closing brace is found, use the previous line number
-            if [[ -z "$prev_end_brace_line" ]]; then
-                prev_end_brace_line=$prev_end_line_number
-            else
+            # Adjust line number relative to the file
+            if [[ -n "$prev_end_brace_line" ]]; then
                 prev_end_brace_line=$((prev_end_line_number + prev_end_brace_line - 1))
+            else
+                prev_end_brace_line=$prev_end_line_number
             fi
 
-            # Count blank lines between the previous closing brace and the current opening brace
+            # Count blank lines between the closing brace and the current function
             local blank_lines
             blank_lines=$(
-                sed -n "${prev_end_brace_line},${curr_start_line_number}p" "$file" | 
-                grep -c '^$'
+                sed -n "$((prev_end_brace_line + 1)),$((curr_start_line_number - 1))p" "$file" | 
+                grep -c "^[[:space:]]*$"
             )
 
             # Construct message and check if the spacing violates
-            location="Between functions at lines $prev_end_line_number and $curr_start_line_number"
+            location="Between functions at lines $prev_end_brace_line and $curr_start_line_number"
             report="there are $blank_lines blank lines"
             message="$location, $report"
 
-            if [[ "$spacing" == "1" && "$blank_lines" -ne 1 ]]; then
-                echo "$message (should be 1)."
-            elif [[ "$spacing" == "2" && "$blank_lines" -ne 2 ]]; then
-                echo "$message (should be 2)."
+            # Report if the spacing does not match the expectation
+            if [[ "$blank_lines" -ne "$spacing" ]]; then
+                print_message "$COLOR_YELLOW" "$message (should be $spacing)."
             fi
         fi
 
-        # Update previous function's line number and definition
-        prev_end_line_number="$curr_start_line_number"
-        prev_function="$curr_function"
-
+        # Update previous function's last line
+        prev_end_line_number=$curr_start_line_number
     done <<< "$functions"
 
     print_message "$COLOR_GREEN" "Spacing check completed."
@@ -542,7 +539,8 @@ check_function_length() {
         # Check if function length exceeds max_length
         if [[ $line_count -gt "$max_length" && $function_start -gt 0 ]]; then
             ((issues++))
-            message="Function '$function_name' exceeds $max_length lines by $((line_count-max_length)) lines."
+            exceed="by $((line_count-max_length)) lines"
+            message="Function '$function_name' exceeds $max_length lines $exceed."
             long_functions="$long_functions\n$message"
 
             # Optionally print verbose message
@@ -623,7 +621,6 @@ usage() {
     print_message "$COLOR_PURPLE" "  -h, --help          Display this help message"
     exit 0
 }
-
 
 # Function to parse arguments and initiate checks
 parse_arguments() {

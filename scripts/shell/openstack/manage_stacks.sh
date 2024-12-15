@@ -58,10 +58,92 @@ DEFAULT_SERVER_NAME="swarm_server"
 DEFAULT_NETWORK="swarm_network"
 DEFAULT_TYPE='info'
 ITEMS_PER_PAGE=10
+HEADER_LENGTH=120
 
 ########################################## END OF CONSTANTS ########################################
 
 ################################ BEGIN OF GENERAL UTILITARY FUNCTIONS ##############################
+
+boxed_text() {
+  local word=${1}          # Word to render
+  local font=${2:-slant}  # Default font is 'slant'
+  local min_width=${3:-$(($(tput cols) - 28))}  # Default minimum width is 80
+  local style=${4:-simple}  # Default border style is 'simple'
+
+  # Define the border styles
+  declare -A border_styles=(
+  ["simple"]="- - | | + + + +"
+  ["asterisk"]="* * * * * * * *"
+  ["equal"]="= = | | + + + +"
+  ["hash"]="# # # # # # # #"
+  ["dotted"]=". . . . . . . ."
+  ["starred"]="* * * * * * * *"
+  ["boxed-dashes"]="- - - - - - - -"
+  ["wave"]="~ ~ ~ ~ ~ ~ ~ ~"
+  ["none"]="         "
+  )
+
+  # Extract the border characters
+  IFS=' ' read -r \
+    top_fence \
+    bottom_fence \
+    left_fence \
+    right_fence \
+    top_left_corner \
+    top_right_corner \
+    bottom_left_corner \
+    bottom_right_corner <<< "${border_styles[$style]}"
+
+  # Get the terminal width
+  terminal_width=$(tput cols)
+
+  # Generate the ASCII art
+  ascii_art=$(figlet -f "$font" "$word")
+
+  # Calculate the width of the ASCII art
+  art_width=$(echo "$ascii_art" | head -n 1 | wc -c)
+  
+  # Subtract 1 to account for the newline character
+  art_width=$((art_width - 1))
+
+  # Determine the maximum width for borders (account for left/right fences)
+  max_border_width=$((terminal_width - 2))  # Subtract 2 for left and right fences
+  total_width=$((min_width > art_width ? min_width : art_width))
+
+  # Ensure the total width does not exceed terminal width
+  total_width=$((total_width > max_border_width ? max_border_width : total_width))
+
+  # Generate the top and bottom borders
+  top_border=$(\
+    printf "%s%s%s" \
+    "$top_left_corner" "$(printf "%${total_width}s" | \
+    tr ' ' "$top_fence")" "$top_right_corner"
+  )
+  bottom_border=$(\
+    printf "%s%s%s" \
+    "$bottom_left_corner" "$(printf "%${total_width}s" | \
+    tr ' ' "$bottom_fence")" "$bottom_right_corner"
+  )
+
+  # Print the top border
+  highlight "$top_border"
+
+  # Print the ASCII art with left and right borders
+  while IFS= read -r art_content; do
+    art_length=${#art_content}
+    padding_left=$(( (total_width - art_length) / 2 ))
+    padding_right=$(( total_width - padding_left - art_length ))
+    padded_line=$(\
+      printf "%s%*s%s%*s%s" \
+      "$left_fence" "$padding_left" "" "$art_content" "$padding_right" "" "$right_fence"
+    )
+
+    highlight "$padded_line"
+  done <<< "$ascii_art"
+
+  # Print the bottom border
+  highlight "$bottom_border"
+}
 
 # Function to decode JSON and base64
 query_json64() {
@@ -79,6 +161,28 @@ random_string() {
 
   local word="$(openssl rand -hex $length)"
   echo "$word"
+}
+
+mask_string() {
+  local input_string="$1"
+  local unmask_length="${2:-4}" # Default to showing last 4 characters
+  local mask_char="${3:-*}"    # Default mask character: '*'
+
+  if [[ -z "$input_string" ]]; then
+    echo "Error: Input string is required."
+    return 1
+  fi
+
+  local masked_length=$(( ${#input_string} - unmask_length ))
+  if [[ $masked_length -le 0 ]]; then
+    echo "$input_string" # Return the original string if it's shorter than the unmask length
+    return 0
+  fi
+
+  local masked_part=$(printf "%${masked_length}s" | tr ' ' "$mask_char")
+  local unmasked_part="${input_string: -$unmask_length}"
+
+  echo "${masked_part}${unmasked_part}"
 }
 
 # Function to validate empty values
@@ -99,16 +203,19 @@ extract_variables() {
 }
 
 # Function to replace variables in a template
-replace_variables_in_template() {
+replace_mustache_variables() {
   local template="$1"
   declare -n variables="$2" # Associative array passed by reference
 
-  # Use a safe delimiter and avoid external `sed` for portability
+  # Iterate over the variables and replace each instance of {{KEY}} in the template
   for key in "${!variables[@]}"; do
     value="${variables[$key]}"
+    
+    # Escape special characters in the value to prevent issues with sed (if needed)
+    value_escaped=$(printf '%s' "$value" | sed 's/[&/\]/\\&/g')
 
     # Replace instances of {{KEY}} in the template
-    template="${template//\{\{$key\}\}/$value}"
+    template="${template//\{\{$key\}\}/$value_escaped}"
   done
 
   # Output the substituted template
@@ -163,6 +270,22 @@ validate_email_value() {
   # Check if the value matches an email pattern
   if [[ ! "$value" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
     echo "The value '$value' is not a valid email address."
+    return 1
+  fi
+
+  return 0
+}
+
+# Function to validate url suffix
+validate_url_suffix() {
+  local value="$1"
+
+  # Regular expression to match the part after "https://"
+  local url_suffix_regex="^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$"
+
+  # Check if the value matches the suffix pattern
+  if [[ ! "$value" =~ $url_suffix_regex ]]; then
+    echo "The value '$value' is not a valid URL suffix (domain and optional path)."
     return 1
   fi
 
@@ -242,7 +365,7 @@ find_next_available_port() {
 
 # Function to retrieve the IP address
 get_ip() {
-  echo "$(hostname -I | awk '{print $1}')"
+    ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1
 }
 
 # Function to check if a package is already installed
@@ -257,17 +380,18 @@ run_command() {
   local current_step="$2"
   local total_steps="$3"
   local step_message="$4"
+
   local log_file="/tmp/command_log.txt"
   local allow_dangerous_commands="${5:no}"
 
   # Ensure we don't run any destructive commands unintentionally unless explicitly allowed
   if [[ "$allow_dangerous_commands" != "yes" && "$command" =~ (rm|mv|dd|reboot|shutdown) ]]; then
-    echo "Error: This function does not support potentially destructive commands."
+    error "This function does not support potentially destructive commands."
     return 1
   fi
 
   # Format and display step message
-  format "info" "$step_message" true
+  step_info $current_step $total_steps "$step_message"
 
   # Run the command and process its output line by line, logging both stdout and stderr
   {
@@ -283,14 +407,7 @@ run_command() {
 
   # Get the exit status of the last command run
   exit_code=$?
-
-  # Handle command exit status
-  if [ $exit_code -eq 0 ]; then
-    format "success" "[$current_step/$total_steps] $step_message succeeded" true
-  else
-    format "error" "[$current_step/$total_steps] $step_message failed" true
-    cat "$log_file" | format "error" "Command output:"
-  fi
+  handle_exit $? $current_step $total_steps "$step_message"
 
   # Clean up the log file if needed
   rm -f "$log_file"
@@ -328,7 +445,8 @@ clear_lines() {
 
 # Function to install a package
 install_package() {
-  local package="$1"
+  local command="$1"
+  local package="$2"
 
   # Check if the package is already installed
   if is_package_installed "$package"; then
@@ -337,8 +455,7 @@ install_package() {
     info "Starting installation of package: $package"
 
     # Try to install the package and check for success
-    if ! DEBIAN_FRONTEND=noninteractive apt-get install "$package" -yq \
-      --no-install-recommends >/dev/null 2>&1; then
+    if ! DEBIAN_FRONTEND=noninteractive $command install "$package" -yq >/dev/null 2>&1; then
       error "Failed to install package: $package. Check logs for more details."
       exit 1
     else
@@ -350,13 +467,15 @@ install_package() {
 # Function to install all packages and track progress
 install_all_packages() {
   # The list of packages to install (passed as arguments)
+  local command="$1"
+  shift
   local packages=("$@")
   local total_packages=${#packages[@]}
   local installed_count=0
 
   # Install each package
   for package in "${packages[@]}"; do
-    install_package "$package"
+    install_package "$command" "$package"
     installed_count=$((installed_count + 1))
   done
 }
@@ -742,6 +861,36 @@ convert_json_array_to_base64_array() {
   echo "$json_array" | jq -r '.[] | @base64'
 }
 
+search_on_json_array() {
+  local json_array_string="$1"
+  local search_key="$2"
+  local search_value="$3"
+
+  # Validate JSON
+  if ! echo "$json_array_string" | jq . >/dev/null 2>&1; then
+    echo "Invalid JSON array."
+    return 1
+  fi
+
+  # Search for an object in the array with the specified key-value pair
+  if [[ -n "$search_key" && -n "$search_value" ]]; then
+    local matched_item
+    matched_item=$(\
+      echo "$json_array_string" | \
+      jq -c --arg key "$search_key" --arg value "$search_value" \
+      '.[] | select(.[$key] == $value)'\
+    )
+
+    if [[ -n "$matched_item" ]]; then
+      echo "$matched_item"
+      return 0
+    else
+      echo "No matching item found for key '$search_key' and value '$search_value'."
+      return 1
+    fi
+  fi
+}
+
 # Function to validate the input and return errors for invalid fields
 validate_value() {
   local value="$1"
@@ -863,7 +1012,8 @@ prompt_for_input() {
     explanation="$explanation or Enter to use the default value '$default_value'"
   fi
 
-  local prompt="$general_info\n$explanation: "
+  local prompt="$explanation: "
+  question "$general_info"
   fmt_prompt=$(format 'question' "$prompt")
 
   while true; do
@@ -1561,7 +1711,7 @@ wait_for_input() {
   fi
 
   # Display the prompt message and wait for user input
-  prompt_message="$(format "$type" "$prompt_message")"
+  prompt_message="$(format "question" "$prompt_message")"
   read -rp "$prompt_message" user_input
 }
 
@@ -1571,7 +1721,15 @@ wait_for_input() {
 
 # Function to check if Docker Swarm is active
 is_swarm_active() {
-  if docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q 'active'; then
+  local state=$(\
+    docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | \
+    tr -d '\n' | tr -d ' '\
+  )
+  if [[ -z "$state" ]]; then
+    echo "Swarm state is empty or undefined." >&2
+    return 1
+  fi
+  if [[ "$state" == "active" ]]; then
     return 0
   else
     return 1
@@ -1671,9 +1829,11 @@ get_latest_stable_version() {
   # Find the latest stable version
   if [ ${#stable_tags[@]} -gt 0 ]; then
     latest_version=$(printf "%s\n" "${stable_tags[@]}" | sort -V | uniq | tail -n 1)
-    echo "Latest version for $image_name: $latest_version"
+    echo "$latest_version"
+    return 0
   else
     echo "No stable version found for $image_name."
+    return 1
   fi
 }
 
@@ -1736,8 +1896,7 @@ deploy_stack_on_swarm() {
   fi
 
   # Deploy the service using Docker stack
-  docker stack deploy \
-    --detach=false --prune --resolve-image always -c "$compose_path" "$stack_name"
+  docker stack deploy --prune --resolve-image always -c "$compose_path" "$stack_name"
 
   if [ $? -eq 0 ]; then
     success "Stack $stack_name deployed and running successfully."
@@ -2144,86 +2303,52 @@ validate_compose_file() {
   return $EXIT_CODE
 }
 
-# Function to check for cycles in service dependencies
-check_dependency_cycles() {
-  local service_config_file=$1
-
-  # Validate that the configuration file exists
-  if [[ ! -f "$service_config_file" ]]; then
-    error "Configuration file '$service_config_file' not found." $HAS_TIMESTAMP
-    exit 1
-  fi
-
-  # Extract service name and dependencies
-  local service_name=$(jq -r '.service_name' "$service_config_file")
-  local dependencies=$(jq -r '.dependencies // {} | keys | .[]' "$service_config_file")
-
-  # If no dependencies exist, the service has no cycles
-  if [[ -z "$dependencies" ]]; then
-    success "No dependencies found for $service_name. No cycles detected." $HAS_TIMESTAMP
-    return
-  fi
-
-  # Use an associative array (visited) to track visited nodes
-  declare -A visited
-
-  # Function to recursively check dependencies
-  local cycle_detected=0
-  detect_cycle() {
-    local current_service=$1
-    local current_config_file=$2
-
-    # Check if the service is already being visited (cycle detected)
-    if [[ ${visited["$current_service"]} == "in_progress" ]]; then
-      error "Error: Cycle detected involving '$current_service'." $HAS_TIMESTAMP
-      cycle_detected=1
-      return
-    elif [[ ${visited["$current_service"]} == "visited" ]]; then
-      return
-    fi
-
-    # Mark the current service as in progress
-    visited["$current_service"]="in_progress"
-
-    # Get dependencies of the current service
-    if [[ -f "$current_config_file" ]]; then
-      local child_dependencies=$(
-        jq -r \
-          '.dependencies // {} | keys | .[]' \
-          "$current_config_file"
-      )
-
-      for dependency in $child_dependencies; do
-        # Get the dependency's configuration file
-        local dependency_config_file="${dependency}_config.json"
-
-        # Check for the dependency config file existence
-        if [[ ! -f "$dependency_config_file" ]]; then
-          message="Configuration file for dependency '$dependency' not found. Skipping."
-          warning $message $HAS_TIMESTAMP
-          continue
-        fi
-
-        detect_cycle "$dependency" "$dependency_config_file"
-        if [[ $cycle_detected -eq 1 ]]; then
-          return
-        fi
-      done
-    fi
-
-    # Mark the current service as visited
-    visited["$current_service"]="visited"
-  }
-
-  # Start cycle detection from the given service
-  detect_cycle "$service_name" "$service_config_file"
-
-  if [[ $cycle_detected -eq 0 ]]; then
-    success "No cycles detected in the dependencies of $service_name." $HAS_TIMESTAMP
+# Function to remove dangling images and their associated containers
+remove_dangling_images() {
+  message="Removing dangling images"
+  status="success"
+  
+  # Check if there are any dangling images
+  dangling_images=$(docker images --filter 'dangling=true' -q)
+  
+  if [ -n "$dangling_images" ]; then
+    for image in $dangling_images; do
+      # Check if any container is using the image
+      container_using_image=$(docker ps -a --filter "ancestor=$image" -q)
+      
+      if [ -n "$container_using_image" ]; then
+        # Stop and remove containers using the image
+        for container_id in $container_using_image; do
+          # Check if container is running
+          container_status=$(docker ps --filter "id=$container_id" -q)
+          
+          if [ -n "$container_status" ]; then
+            # Container is running, stop it
+            warning "Stopping running container $container_id"
+            docker stop "$container_id"
+          fi
+          
+          # Remove the container
+          warning "Removing container $container_id"
+          docker rm "$container_id" || status="failed"
+        done
+      fi
+      
+      # Remove the dangling image
+      warning "Removing image $image"
+      docker rmi -f "$image" || { \
+        error "Failed to remove image $image, possibly still in use."; 
+        status="failed"; 
+      }
+    done
   else
-    error "Cycles detected. Dependency structure is invalid." $HAS_TIMESTAMP
-    exit 1
+    status="no_dangling_images"
+    message="No dangling images found."
   fi
+  
+  # Return the status and message
+  echo "$status"
+  echo "$message"
 }
 
 # Function to clean docker environment with one confirmation step
@@ -2242,17 +2367,25 @@ sanitize() {
     # Run commands with explicit permission for destructive operations
     message="Pruning unused containers, networks, volumes, and build cache"
     command="docker system prune --all --volumes -f"
-    run_command "$command" 1 total_steps "$message" "yes"
+    run_command "$command" 1 $total_steps "$message" "yes"
 
     message="Removing dangling images"
-    # Check if there are any dangling images and remove them
-    dangling_images=$(docker images --filter 'dangling=true' -q)
-    if [ -n "$dangling_images" ]; then
-      command="docker images --filter 'dangling=true' -q | xargs docker rmi -f"
-      run_command "$command" 2 $total_steps "$message" "yes"
-      echo "$dangling_images" | xargs docker rmi -f
-    else
+
+    # Call the function and capture its output
+    message="Removing dangling images"
+    step_info 2 $total_steps "$message"
+    
+    status_message=$(remove_dangling_images)
+    status=$(echo "$status_message" | head -n 1)
+    message=$(echo "$status_message" | tail -n 1)
+
+    # Handle status after the function call
+    if [[ "$status" == "success" ]]; then
+      step_success 2 $total_steps "Cleanup completed successfully: $message"
+    elif [[ "$status" == "no_dangling_images" ]]; then
       step_warning 2 $total_steps "No dangling images found."
+    else
+      step_error 2 $total_steps "$message"
     fi
 
     message="Removing stopped containers"
@@ -2277,17 +2410,17 @@ create_network_if_not_exists() {
 
   # Check if the network already exists
   if ! docker network ls --format '{{.Name}}' | grep -wq "$network_name"; then
-    echo "Creating network: $network_name"
+    info "Creating network: $network_name"
 
     # Create the overlay network
-    if docker network create --driver overlay "$network_name"; then
-      echo "Network $network_name created successfully."
+    if docker network create --driver overlay "$network_name" 2>/dev/null; then
+      success "Network $network_name created successfully."
     else
-      echo "Error: Failed to create network $network_name."
+      error "Failed to create network $network_name."
       return 1 # Exit with error status if network creation fails
     fi
   else
-    echo "Network $network_name already exists."
+    warning "Network $network_name already exists."
   fi
 }
 
@@ -2421,8 +2554,8 @@ generate_config_schema() {
 
 # Function to extract required fields and generate schema
 validate_stack_config() {
-  local config_json="$1"
-  local stack_name="$2" # Add stack_name as an argument to the function
+  local stack_name="$1"
+  local config_json="$2"
 
   # Get required fields from the stack template
   required_fields=$(list_stack_required_fields "$stack_name")
@@ -2448,33 +2581,33 @@ build_and_deploy_stack() {
   # Parse JSON data and populate associative array
   while IFS="=" read -r key value; do
     stack_variables["$key"]="$value"
-  done < <(echo "$service_json" | jq -r '.variables | to_entries | .[] | "\(.key)=\(.value)"')
+  done < <(echo "$stack_json" | jq -r '.variables | to_entries | .[] | "\(.key)=\(.value)"')
 
-  highlight "Deploying stack $stack_variables" $HAS_TIMESTAMP
+  highlight "Deploying stack '$stack_name'"
 
   # Step 1: Deploy Dependencies
-  message="[$stack_variables] Checking and deploying dependencies"
+  message="[$stack_name] Checking and deploying dependencies"
   step_progress 1 $total_steps "$message"
   local dependencies=$(echo "$stack_json" | jq -r '.dependencies[]?')
 
   # Check if there are dependencies, and if none, display a message
   if [ -z "$dependencies" ]; then
-    step_warning 1 $total_steps "[$stack_variables] No dependencies to deploy"
+    step_warning 1 $total_steps "[$stack_name] No dependencies to deploy"
   else
-    for dep in $dependencies; do
-      step_progress 1 $total_steps "[$stack_variables] Deploying dependency: $dep"
+    for dependency in $dependencies; do
+      step_progress 1 $total_steps "[$stack_name] Deploying dependency: $dependency"
 
       # Fetch JSON for the dependency
       local dep_service_json
-      dep_stack_json=$(fetch_service_json "$dep")
+      dep_stack_json=$(fetch_service_json "$dependency")
 
       deploy_stack "$dep" "$dep_stack_json"
-      handle_exit "$?" 1 $total_steps "Deploying dependency $dep"
+      handle_exit "$?" 1 $total_steps "Deploying dependency $dependency"
     done
   fi
 
   # Step 2: Execute setUp actions (if defined in the service JSON)
-  step_progress 2 $total_steps "[$stack_variables] Executing setUp actions"
+  step_progress 2 $total_steps "[$stack_name] Executing setUp actions"
   local setUp_actions
   setUp_actions=$(echo "$service_json" | jq -r '.setUp[]?')
 
@@ -2490,18 +2623,18 @@ build_and_deploy_stack() {
 
     for action in "${actions_array[@]}"; do
       # Perform the action (you can define custom functions to execute these steps)
-      step 2 $total_steps "[$service_name] Running setUp action: $action" "info"
+      step 3 $total_steps "[$service_name] Running setUp action: $action" "info"
 
       # Call an appropriate function to handle this setUp action
       execute_set_up_action "$action"
-      handle_exit $? 2 $total_steps "Executing setUp action $action"
+      handle_exit $? 3 $total_steps "Executing setUp action $action"
     done
   else
-    step_warning 2 $total_steps "[$stack_name] No setUp actions defined"
+    step_warning 3 $total_steps "[$stack_name] No setUp actions defined"
   fi
 
   # Step 3: Build service-related file paths and Docker Compose template
-  step_progress 3 $total_steps "[$stack_name] Building file paths"
+  step_progress 4 $total_steps "[$stack_name] Building file paths"
   stack_info="$(build_stack_info "$stack_name")"
   local config_path=$(echo "$stack_info" | awk '{print $1}')
   local compose_filepath=$(echo "$stack_info" | awk '{print $2}')
@@ -2509,32 +2642,33 @@ build_and_deploy_stack() {
   handle_exit $? 4 $total_steps "[$stack_name] File paths built" "success"
 
   # Retrieve and substitute variables in Docker Compose template
-  step_progress 4 $total_steps "[$stack_name] Creating Docker Compose template"
-  local template=$($compose_template_func)
+  step_progress 5 $total_steps "[$stack_name] Creating Docker Compose template"
   local substituted_template
-  substituted_template=$(replace_variables_in_template "$template" service_variables)
-  handle_exit $? 4 $total_steps "[$stack_name] Docker Compose template created"
+  substituted_template="$(\
+    replace_mustache_variables "$($compose_template_func)" stack_variables \
+  )"
+  handle_exit $? 5 $total_steps "[$stack_name] Docker Compose template created"
 
   # Write the substituted template to the compose file
-  step_progress 5 $total_steps "[$stack_name] Writing Docker Compose template"
+  step_progress 6 $total_steps "[$stack_name] Writing Docker Compose template"
   compose_path="$(pwd)/$compose_filepath"
   echo "$substituted_template" >"$compose_path"
-  handle_exit $? 5 $total_steps "[$stack_name] Writing file $compose_filepath"
+  handle_exit $? 6 $total_steps "[$stack_name] Writing file $compose_filepath"
 
   # Step 5: Validate the Docker Compose file
-  step_progress 6 $total_steps "[$stack_name] Validating Docker Compose file"
+  step_progress 7 $total_steps "[$stack_name] Validating Docker Compose file"
   validate_compose_file "$compose_path"
-  handle_exit $? 6 $total_steps "[$stack_name] Validating Docker Compose file $compose_path"
+  handle_exit $? 7 $total_steps "[$stack_name] Validating Docker Compose file $compose_path"
 
   # Step 6: Deploy the service on Docker Swarm
-  step_progress 7 $total_steps "[$stack_name] Deploying service on Docker Swarm"
+  step_progress 8 $total_steps "[$stack_name] Deploying service on Docker Swarm"
   deploy_stack_on_swarm "$stack_name" "$compose_filepath"
-  handle_exit $? 7 $total_steps "Deploying stack $stack_name"
+  handle_exit $? 8 $total_steps "[$stack_name] Deploying stack $stack_name"
 
   # Step 7: Save service-specific information to a configuration file
-  step_progress 7 $total_steps "[$service_name] Saving stack configuration"
+  step_progress 9 $total_steps "[$stack_name] Saving stack configuration"
   write_json "$config_path" "$stack_json"
-  handle_exit $? 7 $total_steps "Saving information for stack $service_name"
+  handle_exit $? 9 $total_steps "[$stack_name] Saving information for stack $stack_name"
 
   # Final Success Message
   deploy_success_message "$stack_name"
@@ -2647,19 +2781,43 @@ generate_set_up_actions_n8n() {
 # Function to generate configuration files for traefik
 generate_config_traefik() {
   local stack_name="traefik" # Default service name
+  
+  server_info_json="$(cat 'server_info.json')"
+  local network_name="$(
+    search_on_json_array "$server_info_json" "name" "network_name" | jq -r ".value"
+  )"
+
+  items='[
+      {
+          "name": "email_ssl",
+          "label": "E-mail SSL",
+          "description": "E-mail to receive SSL notifications",
+          "required": "yes",
+          "validate_fn": "validate_email_value" 
+      }
+  ]'
+
+  collected_items="$(run_collection_process "$items")"
+
+  if [[ "$collected_items" == "[]" ]]; then
+    error "Unable to retrieve Traefik configuration."
+    return 1
+  fi
+  email_ssl="$(\
+    search_on_json_array "$collected_items" 'name' 'email_ssl' | \
+    jq -r ".value"
+  )"
 
   # Ensure everything is quoted correctly
   jq -n \
-    --arg STACK_NAME "$stack_name" \
-    --arg EMAIL_SSL $email_ssl, \
-    --arg VOLUME_NAME "${service_name}_data" \
-    --arg NETWORK_NAME "$network_name" \
+    --arg stack_name "$stack_name" \
+    --arg email_ssl $email_ssl \
+    --arg network_name "$network_name" \
     '{
-            "name": $STACK_NAME,
+            "name": $stack_name,
             "variables": {
-                "EMAIL_SSL": $EMAIL_SSL,
-                "VOLUME_NAME": $VOLUME_NAME,
-                "NETWORK_NAME": $NETWORK_NAME,
+                "email_ssl": $email_ssl,
+                "network_name": $network_name,
             },
             "dependencies": {},
             "setUp": []
@@ -2668,32 +2826,68 @@ generate_config_traefik() {
 
 # Function to generate configuration files for portainer
 generate_config_portainer() {
-  local stack_name="portainer"         # Default service name
-  local image_version="${1:-"latest"}" # Accept image version or default to 14
-  local network_name="${2:-DEFAULT_NETWORK}"
+  local stack_name="portainer"
+  
+  total_steps=3
+  
+  highlight 'Gathering portainer configuration'
+
+  step_info 1 $total_steps "Retrieving Portainer agent version"
+  local portainer_agent_version="$(get_latest_stable_version "portainer/agent")"
+  info "Portainer agent version: $portainer_agent_version"
+  step_success 1 $total_steps "Retrieving Portainer agent version succeed"
+  
+  step_info 2 $total_steps "Retrieving Portainer ce version"
+  local portainer_ce_version="$(get_latest_stable_version "portainer/portainer-ce")"
+  info "Portainer ce version: $portainer_ce_version"
+  step_success 2 $total_steps "Retrieving Portainer ce version succeed"
+
+  server_info_json="$(cat 'server_info.json')"
+  local network_name="$(
+    search_on_json_array "$server_info_json" "name" "network_name" | jq -r ".value"
+  )"
+
+  # Prompting step 
+  items='[
+      {
+          "name": "portainer_url",
+          "label": "Portainer URL",
+          "description": "URL to access Portainer remotely",
+          "required": "yes",
+          "validate_fn": "validate_url_suffix" 
+      }
+  ]'
+
+  step_info 3 $total_steps "Prompting required Portainer information"
+  collected_items="$(run_collection_process "$items")"
+
+  if [[ "$collected_items" == "[]" ]]; then
+    step_error 3 $total_steps "Unable to prompt Portanier configuration."
+    return 1
+  fi
+  portainer_url="$(\
+    search_on_json_array "$collected_items" 'name' 'portainer_url' | \
+    jq -r ".value"
+  )"
 
   # Ensure everything is quoted correctly
   jq -n \
-    --arg STACK_NAME "$stack_name" \
-    --arg IMAGE_NAME "${service_name}_$image_version" \
-    --arg IMAGE_VERSION "$image_version" \
-    --arg VOLUME_NAME "${service_name}_data" \
-    --arg NETWORK_NAME "$network_name" \
+    --arg stack_name "$stack_name" \
+    --arg portainer_agent_version "$portainer_agent_version" \
+    --arg portainer_ce_version "$portainer_ce_version" \
+    --arg portainer_url "$portainer_url" \
+    --arg network_name "$network_name" \
     '{
-            "variables": {
-                "STACK_NAME": $STACK_NAME,
-                "IMAGE_NAME": $IMAGE_NAME,
-                "IMAGE_VERSION": $IMAGE_VERSION,
-                "CONTAINER_NAME": $CONTAINER_NAME,
-                "CONTAINER_PORT": $CONTAINER_PORT,
-                "VOLUME_NAME": $VOLUME_NAME,
-                "NETWORK_NAME": $NETWORK_NAME,
-                "DB_USER": $DB_USER,
-                "DB_PASSWORD": $DB_PASSWORD
-            },
-            "dependencies": {},
-            "setUp": []
-        }'
+          "variables": {
+              "stack_name": $stack_name,
+              "portainer_agent_version": $portainer_agent_version,
+              "portainer_ce_version": $portainer_ce_version,
+              "portainer_url": $portainer_url,
+              "network_name": $network_name
+          },
+          "dependencies": {},
+          "setUp": []
+      }'
 }
 
 # Function to generate configuration files for redis
@@ -2704,24 +2898,24 @@ generate_config_redis() {
   local network_name="${3:-$DEFAULT_NETWORK}" # Accept network or default to default_network
 
   jq -n \
-    --arg STACK_NAME "$stack_name" \
-    --arg IMAGE_NAME "$stack_name_$image_version" \
-    --arg IMAGE_VERSION "$image_version" \
-    --arg CONTAINER_NAME "$stack_name" \
-    --arg CONTAINER_PORT "$container_port" \
-    --arg SERVICE_URL "$stack_name://$stack_name:$container_port" \
-    --arg VOLUME_NAME "$stack_name_data" \
-    --arg NETWORK_NAME "$network_name" \
+    --arg stack_name "$stack_name" \
+    --arg image_name "$stack_name_$image_version" \
+    --arg image_version "$image_version" \
+    --arg container_name "$stack_name" \
+    --arg container_port "$container_port" \
+    --arg redis_url "$stack_name://$stack_name:$container_port" \
+    --arg volume_name "$stack_name_data" \
+    --arg network_name "$network_name" \
     '{
-            "name": $STACK_NAME,
+            "name": $stack_name,
             "variables": {
-                "IMAGE_NAME": $IMAGE_NAME,
-                "IMAGE_VERSION": $IMAGE_VERSION,
-                "CONTAINER_NAME": $CONTAINER_NAME,
-                "CONTAINER_PORT": $CONTAINER_PORT,
-                "SERVICE_URL": $SERVICE_URL,
-                "VOLUME_NAME": $VOLUME_NAME,
-                "NETWORK_NAME": $NETWORK_NAME
+                "image_name": $image_name,
+                "image_version": $image_version,
+                "container_name": $container_name,
+                "container_port": $container_port,
+                "redis_url": $redis_url,
+                "volume_name": $volume_name,
+                "network_name": $network_name
             },
             "dependencies": {},
             "setUp": []
@@ -2739,27 +2933,27 @@ generate_config_postgres() {
 
   # Ensure everything is quoted correctly
   jq -n \
-    --arg STACK_NAME "$stack_name" \
-    --arg IMAGE_NAME "${stack_name}_$image_version" \
-    --arg IMAGE_VERSION "$image_version" \
-    --arg CONTAINER_NAME "$service_name" \
-    --arg CONTAINER_PORT "$container_port" \
-    --arg DB_USER "$postgres_user" \
-    --arg DB_PASSWORD "$postgres_password" \
-    --arg VOLUME_NAME "${service_name}_data" \
-    --arg NETWORK_NAME "$network_name" \
+    --arg stack_name "$stack_name" \
+    --arg image_name "${stack_name}_$image_version" \
+    --arg image_version "$image_version" \
+    --arg container_name "$service_name" \
+    --arg container_potr "$container_port" \
+    --arg db_user "$postgres_user" \
+    --arg db_password "$postgres_password" \
+    --arg volume_name "${service_name}_data" \
+    --arg network_name "$network_name" \
     '{
-            "name": $STACK_NAME,
+            "name": $stack_name,
             "variables": {
-                "STACK_NAME": $STACK_NAME,
-                "IMAGE_NAME": $IMAGE_NAME,
-                "IMAGE_VERSION": $IMAGE_VERSION,
-                "CONTAINER_NAME": $CONTAINER_NAME,
-                "CONTAINER_PORT": $CONTAINER_PORT,
-                "VOLUME_NAME": $VOLUME_NAME,
-                "NETWORK_NAME": $NETWORK_NAME,
-                "DB_USER": $DB_USER,
-                "DB_PASSWORD": $DB_PASSWORD
+                "stack_name": $stack_name,
+                "image_name": $image_name,
+                "image_version": $image_version,
+                "container_name": $container_name,
+                "container_port": $container_port,
+                "volume_name": $volume_name,
+                "network_name": $network_name,
+                "db_user": $db_user,
+                "db_password": $db_password
             },
             "dependencies": {},
             "setUp": []
@@ -2926,7 +3120,7 @@ compose_portainer() {
 services:
 
   agent:
-    image: portainer/agent:{{agent_version}}
+    image: portainer/agent:{{portainer_agent_version}}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -2941,15 +3135,15 @@ services:
         constraints: [node.platform.os == linux]
 
   portainer:
-    image: portainer/portainer-ce:{{portainer_version}} 
+    image: portainer/portainer-ce:{{portainer_ce_version}} 
     command: -H tcp://tasks.agent:9001 --tlsskipverify
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - {{volume_name}}:/data
+      - portainer_data:/data
 
     networks:
-      - {{network_name}} ## Nome da rede interna
+      - {{network_name}}
 
     deploy:
       mode: replicated
@@ -2968,9 +3162,9 @@ services:
 
 
 volumes:
-  {{volume_name}}:
+  portainer_data:
     external: true
-    name: {{volume_name}}
+    name: portainer_data
 networks:
   {{network_name}}:
     external: true
@@ -3140,6 +3334,8 @@ deploy_stack_traefik() {
   # Check required fields
   validate_stack_config "$stack_name" "$config_json"
 
+  echo "$config_json" >&2
+
   # Deploy the n8n service using the JSON
   build_and_deploy_stack "$stack_name" "$config_json"
 }
@@ -3147,7 +3343,6 @@ deploy_stack_traefik() {
 # Function to deploy a portainer service
 deploy_stack_portainer() {
   local stack_name='portainer'
-  local network_name="${2:-$DEFAULT_NETWORK}"
 
   # Generate the n8n service JSON configuration using the helper function
   local config_json
@@ -3201,18 +3396,9 @@ deploy_stack_n8n() {
   local stack_name='n8n'
   local network_name="${2:-$DEFAULT_NETWORK}"
 
-  # Prompt the user to provide an identifier if not passed as an argument
-  if [[ -z "$1" ]]; then
-    read -p "Enter an identifier for the n8n service: " identifier
-  else
-    identifier="$1"
-  fi
-
-  local augmented_stack_name="${stack_name}_$identifier"
-
   # Generate the n8n service JSON configuration using the helper function
   local n8n_config_json
-  n8n_config_json=$(generate_config_n8n "$identifier")
+  n8n_config_json=$(generate_config_n8n)
 
   # Check required fields
   validate_stack_config "$stack_name" "$config_json"
@@ -3253,11 +3439,11 @@ update_and_install_packages() {
   # Check for apt locks on installation
   wait_apt_lock 5 60
 
-  # Install required packages quietly
-  packages=("sudo" "apt-utils" "apparmor-utils" "jq" "python3" "docker")
-  step_message="Installing required packages"
+  # Install required apt packages quietly
+  packages=("sudo" "apt-utils" "apparmor-utils" "jq" "python3" "docker" "figlet")
+  step_message="Installing required apt-get packages"
   step_progress 3 $total_steps "$step_message"
-  install_all_packages "${packages[@]}"
+  install_all_packages "apt-get" "${packages[@]}"
   handle_exit $? 3 $total_steps "$step_message"
 
   success "Packages installed successfully."
@@ -3402,30 +3588,28 @@ initialize_server_info() {
   sed -i "s/127.0.0.1[[:space:]]localhost/127.0.0.1 $server_name/g" /etc/hosts >/dev/null 2>&1
   handle_exit $? 3 $total_steps "$step_message"
 
-  # Initialize Network
-  message="Network initialization"
-  step_progress 4 $total_steps "$message"
-  create_network_if_not_exists "$network_name"
-  handle_exit $? 4 $total_steps "$step_message"
-
   # Initialize Docker Swarm
   step_message="Docker Swarm initialization"
-  step_progress 5 $total_steps "$step_message"
+  step_progress 4 $total_steps "$step_message"
 
   if is_swarm_active; then
-    step_warning 5 $total_steps "Swarm is already active"
+    step_warning 4 $total_steps "Swarm is already active"
   else
-    # Initialize Swarm with the current IP address
-    local_ip=$(get_ip)
-
-    network_name=$(
+    server_ip=$(
       echo "$server_info_json" | 
       jq -r '.[] | select(.name=="server_ip") | .value'
     )
 
-    docker swarm init --advertise-addr "$local_ip" >/dev/null 2>&1
-    handle_exit $? 5 $total_steps "$step_message"
+    docker swarm init  >/dev/null 2>&1
+    
+    handle_exit $? 4 $total_steps "$step_message"
   fi
+
+    # Initialize Network
+  message="Network initialization"
+  step_progress 5 $total_steps "$message"
+  create_network_if_not_exists "$network_name"
+  handle_exit $? 5 $total_steps "$step_message"
 
   success "Server initialization complete"
 
@@ -3435,9 +3619,11 @@ initialize_server_info() {
 # Declare arrays for stack labels (user-friendly) and stack names (internal)
 # IMPORTANT: The order of the arrays should match
 # NOTE: Add new stacks here
-declare -a stack_labels=("Redis" "Postgres" "N8N")
-declare -a stack_names=("redis" "postgres" "n8n")
+declare -a stack_labels=("Traefik" "Portainer" "Redis" "Postgres" "N8N")
+declare -a stack_names=("traefik" "portainer" "redis" "postgres" "n8n")
 declare -a stack_descriptions=(
+  "A modern reverse proxy and load balancer for microservices that integrates with Docker."
+  "A web-based management interface for Docker environments."
   "A powerful in-memory data structure store used as a database, cache, and message broker."
   "A relational database management system emphasizing extensibility and SQL compliance."
   "A workflow automation tool that allows you to automate tasks and integrate various services."
@@ -3447,13 +3633,29 @@ declare -a stack_descriptions=(
 deploy_stack() {
   local stack="$1"
   case "$stack" in
+  traefik)
+    clear
+    boxed_text 'Traefik'
+    deploy_stack_traefik
+    ;;
+  portainer)
+    clear
+    boxed_text 'Portainer'
+    deploy_stack_portainer
+    ;;
   redis)
+    clear
+    boxed_text 'Redis'
     deploy_stack_redis
     ;;
   postgres)
+    clear
+    boxed_text 'Postgres'
     deploy_stack_postgres
     ;;
   n8n)
+    clear
+    boxed_text 'N8N'
     deploy_stack_n8n
     ;;
   *)
@@ -3489,6 +3691,8 @@ choose_stack_to_install() {
 
   while true; do
     clear
+    boxed_text 'Main menu'
+
     if ((total_pages > 1)); then
       highlight "Select the stack to install (Page $current_page of $total_pages):"
     else
@@ -3633,18 +3837,22 @@ main() {
 
   # Handle options based on parsed arguments
   if [[ $INSTALL == true ]]; then
+    clear
     update_and_install_packages
   fi
 
   if [[ $CLEAN == true ]]; then
+    clear
     clean_docker_environment
   fi
 
   if [[ $STARTUP == true ]]; then
+    clear
     initialize_server_info
   fi
 
   if [[ $PREPARE == true ]]; then
+    clear
     update_and_install_packages
     clean_docker_environment
     initialize_server_info
@@ -3652,6 +3860,8 @@ main() {
 
   # Set or choose the stack
   if [[ -n $STACK ]]; then
+    clear
+    
     deploy_stack "$STACK"
   else
     while true; do
