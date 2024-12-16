@@ -185,15 +185,37 @@ mask_string() {
   echo "${masked_part}${unmasked_part}"
 }
 
-# Function to validate empty values
-validate_empty_value() {
-  local value="$1"
-  if [[ -z "$value" ]]; then
-    echo "The value is empty or not set."
-    return 1
-  else
-    return 0
-  fi
+# Function to send a test email using swaks
+send_email() {
+    local from_email=$1
+    local to_email=$2
+    local server=$3
+    local port=$4
+    local user=$5
+    local pass=$6
+    local subject=$7
+    local body=$8
+
+    echo "Sending test email..."
+
+    swaks \
+        --to "$to_email" \
+        --from "$from_email" \
+        --server "$server" \
+        --port "$port" \
+        --auth LOGIN --auth-user "$user" \
+        --auth-password "$pass" \
+        --tls \
+        --header "Subject: $subject" \
+        --header "Content-Type: text/html; charset=UTF-8" \
+        --data "Content-Type: text/html; charset=UTF-8\n\n$body" > /dev/null
+
+    if [ $? -eq 0 ]; then
+        echo "Test email sent successfully."
+    else
+        echo "Error: Failed to send test email. Check your SMTP configuration."
+        exit 1
+    fi
 }
 
 # Function to extract variables from a string without curly braces
@@ -220,6 +242,17 @@ replace_mustache_variables() {
 
   # Output the substituted template
   echo "$template"
+}
+
+# Function to validate empty values
+validate_empty_value() {
+  local value="$1"
+  if [[ -z "$value" ]]; then
+    echo "The value is empty or not set."
+    return 1
+  else
+    return 0
+  fi
 }
 
 # Function to validate name values with extensive checks
@@ -331,6 +364,29 @@ validate_port_availability() {
   fi
 }
 
+# Function to validate SMTP server connectivity
+validate_smtp_server() {
+    local server=$1
+    if ping -c 1 "$server" >/dev/null 2>&1; then
+        echo "SMTP server $server is reachable."
+    else
+        echo "Error: Unable to reach SMTP server $server. Please check the server address."
+        exit 1
+    fi
+}
+
+# Function to validate SMTP port
+validate_smtp_port() {
+    local server=$1
+    local port=$2
+    if nc -z "$server" "$port" >/dev/null 2>&1; then
+        echo "SMTP port $port is open on $server."
+    else
+        echo "Error: SMTP port $port is not reachable on $server. Please check the port."
+        exit 1
+    fi
+}
+
 # Function to find the next available port
 find_next_available_port() {
   local trigger_port="$1"
@@ -365,7 +421,11 @@ find_next_available_port() {
 
 # Function to retrieve the IP address
 get_ip() {
-    ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1
+    ip -4 addr show scope global | \
+    grep inet | \
+    awk '{print $2}' | \
+    cut -d/ -f1 | \
+    head -n 1
 }
 
 # Function to check if a package is already installed
@@ -1715,6 +1775,101 @@ wait_for_input() {
   read -rp "$prompt_message" user_input
 }
 
+email_test_hmtl(){
+  echo "<html>
+  <head>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f4f9;
+        margin: 0;
+        padding: 0;
+        color: #333333;
+      }
+      .container {
+        margin: 20px auto;
+        padding: 20px;
+        max-width: 600px;
+        background-color: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        text-align: center;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #4caf50;
+      }
+      .header img {
+        max-width: 100px;
+      }
+      h1 {
+        color: #4caf50;
+        margin: 20px 0;
+      }
+      p {
+        color: #555555;
+        line-height: 1.6;
+        margin: 10px 0;
+      }
+      .button {
+        display: inline-block;
+        margin: 20px 0;
+        padding: 10px 20px;
+        background-color: #4caf50;
+        color: #ffffff;
+        text-decoration: none;
+        border-radius: 5px;
+        font-size: 16px;
+        text-align: center;
+      }
+      .button:hover {
+        background-color: #45a049;
+      }
+      .footer {
+        margin-top: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #aaaaaa;
+        border-top: 1px solid #dddddd;
+        padding-top: 10px;
+      }
+      a {
+        color: #4caf50;
+        text-decoration: none;
+      }
+      .social-icons {
+        margin-top: 10px;
+      }
+      .social-icons img {
+        width: 24px;
+        margin: 0 5px;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <div class='container'>
+      <div class='header'>
+        <img src='https://via.placeholder.com/100x100' alt='Logo'>
+        <h1>Welcome to StackSetup</h1>
+      </div>
+      <p>We are thrilled to have you onboard!</p>
+      <p>This email showcases how beautiful and interactive HTML emails can be.</p>
+      <a href='https://www.stacksetup.com' class='button'>Learn More</a>
+      <p>Feel free to reply to this email for any assistance.</p>
+      <div class='footer'>
+        <p>Sent using a Shell Script and the swaks tool.</p>
+        <div class='social-icons'>
+          <a href='https://facebook.com'><img src='https://via.placeholder.com/24x24' alt='Facebook'></a>
+          <a href='https://x.com'><img src='https://via.placeholder.com/24x24' alt='Twitter'></a>
+          <a href='https://linkedin.com'><img src='https://via.placeholder.com/24x24' alt='LinkedIn'></a>
+        </div>
+      </div>
+    </div>
+  </body>
+  </html>"
+}
+
 ################################# END OF GENERAL UTILITARY FUNCTIONS ##############################
 
 ############################### BEGIN OF GENERAL DEPLOYMENT FUNCTIONS #############################
@@ -2567,13 +2722,83 @@ validate_stack_config() {
   validate_json_from_schema "$config_json" "$schema"
 }
 
+test_smtp_email(){
+  items='[
+      {
+          "name": "smtp_server",
+          "label": "SMTP server",
+          "description": "Server to receive SMTP requests",
+          "required": "yes",
+          "validate_fn": "validate_smtp_server",
+          "default_value": "smtp.gmail.com"
+      },
+      {
+          "name": "smtp_port",
+          "label": "SMTP port",
+          "description": "Port on SMTP server",
+          "required": "yes",
+          "validate_fn": "validate_integer_value",
+          "default_value": 587
+      },
+      {
+          "name": "from_email",
+          "label": "From E-mail",
+          "description": "E-mail to receive test e-mail",
+          "required": "yes",
+          "validate_fn": "validate_email_value" 
+      },
+      {
+          "name": "to_email",
+          "label": "To E-mail",
+          "description": "E-mail to receive test e-mail",
+          "required": "yes",
+          "validate_fn": "validate_email_value"
+      },
+      {
+          "name": "username",
+          "label": "SMTP username",
+          "description": "Username of SMTP server",
+          "required": "yes",
+          "validate_fn": "validate_email_value" 
+      },
+      {
+          "name": "password",
+          "label": "SMTP password",
+          "description": "Password of SMTP server",
+          "required": "yes",
+          "validate_fn": "validate_empty_value" 
+      }
+  ]'
+
+  collected_items="$(run_collection_process "$items")"
+
+  if [[ "$collected_items" == "[]" ]]; then
+    error "Unable to retrieve SMTP test configuration."
+    return 1
+  fi
+
+  smtp_server="$(search_on_json_array "$collected_items" 'name' 'smtp_server' | jq -r ".value")"
+  smtp_server="$(search_on_json_array "$collected_items" 'name' 'smtp_port' | jq -r ".value")"
+  from_email="$(search_on_json_array "$collected_items" 'name' 'from_email' | jq -r ".value")"
+  to_email="$(search_on_json_array "$collected_items" 'name' 'to_email' | jq -r ".value")"
+  username="$(search_on_json_array "$collected_items" 'name' 'username' | jq -r ".value")"
+  password="$(search_on_json_array "$collected_items" 'name' 'password' | jq -r ".value")"
+
+  subject="Setup test e-mail"
+  body="$(email_test_hmtl)"
+
+  send_email \
+    "$from_email" "$to_email" "$smtp_server" "$smtp_server" \
+    "$username" "$password" "$subject" "$body"
+}
+
 # Function to deploy a service
 build_and_deploy_stack() {
   # Arguments
   local stack_name="$1" # Service name (e.g., redis, postgres)
   local stack_json="$2" # JSON data with service variables
 
-  total_steps=7
+  total_steps=9
 
   # Declare an associative array to hold service variables
   declare -A stack_variables
@@ -2668,6 +2893,7 @@ build_and_deploy_stack() {
   # Step 7: Save service-specific information to a configuration file
   step_progress 9 $total_steps "[$stack_name] Saving stack configuration"
   write_json "$config_path" "$stack_json"
+  chmod 600 "$config_path"
   handle_exit $? 9 $total_steps "[$stack_name] Saving information for stack $stack_name"
 
   # Final Success Message
@@ -3440,7 +3666,7 @@ update_and_install_packages() {
   wait_apt_lock 5 60
 
   # Install required apt packages quietly
-  packages=("sudo" "apt-utils" "apparmor-utils" "jq" "python3" "docker" "figlet")
+  packages=("sudo" "apt-utils" "apparmor-utils" "jq" "python3" "docker" "figlet" "swaks" "netcat")
   step_message="Installing required apt-get packages"
   step_progress 3 $total_steps "$step_message"
   install_all_packages "apt-get" "${packages[@]}"
@@ -3619,9 +3845,10 @@ initialize_server_info() {
 # Declare arrays for stack labels (user-friendly) and stack names (internal)
 # IMPORTANT: The order of the arrays should match
 # NOTE: Add new stacks here
-declare -a stack_labels=("Traefik" "Portainer" "Redis" "Postgres" "N8N")
-declare -a stack_names=("traefik" "portainer" "redis" "postgres" "n8n")
+declare -a stack_labels=("SMTP test" "Traefik" "Portainer" "Redis" "Postgres" "N8N")
+declare -a stack_names=("smtp" "traefik" "portainer" "redis" "postgres" "n8n")
 declare -a stack_descriptions=(
+  "A simple email service test."
   "A modern reverse proxy and load balancer for microservices that integrates with Docker."
   "A web-based management interface for Docker environments."
   "A powerful in-memory data structure store used as a database, cache, and message broker."
@@ -3631,8 +3858,13 @@ declare -a stack_descriptions=(
 
 # Function to deploy the selected stack based on input
 deploy_stack() {
-  local stack="$1"
-  case "$stack" in
+  local option="$1"
+  case "$option" in
+  smtp)
+    clear
+    boxed_text 'SMTP'
+    test_smtp_email
+    ;;
   traefik)
     clear
     boxed_text 'Traefik'
