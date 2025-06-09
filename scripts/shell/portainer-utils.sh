@@ -48,21 +48,21 @@ reset="\e[0m"
 
 error_msg() { echo -e "${red}Error:${reset} $1" >&2; }
 warning_msg() { echo -e "${yellow}Warning:${reset} $1" >&2; }
-success_msg() { echo -e "${green}$1${reset}"; }
-info_msg() { echo -e "${beige}$1${reset}"; }
-verbose_log() { [[ "$VERBOSE" == true ]] && echo -e "${white}[$(date '+%Y-%m-%d %H:%M:%S')] Verbose:${reset} $1"; }
+success_msg() { echo -e "${green}$1${reset}" >&2; }
+info_msg() { echo -e "${beige}$1${reset}" >&2; }
+verbose_log() { [[ "$VERBOSE" == true ]] && echo -e "${white}[$(date '+%Y-%m-%d %H:%M:%S')] Verbose:${reset} $1"  >&2; }
 
 usage() {
   cat <<EOF
 Usage: $0 <command> [options]
 
 Commands (choose one):
+  deploy     Deploy a new stack (default if no command is given)
   diff       Diff current vs new compose
   update     Update the stack
   delete     Delete the stack
-  dry-run    Validate the compose file via the API, do not deploy/update
-  logs       Print logs for all services in the stack
-
+  dry-run    Validate the compose file via the API, do not deploy/update (not supported)
+  
 Options:
   -r, --url           Portainer URL (e.g. portainer.example.com)
   -u, --username      Portainer username
@@ -73,15 +73,14 @@ Options:
   -v, --verbose       Verbose output
 
 Examples:
+  $0 deploy   -r portainer.local -u admin -p secret -s mystack -f docker-compose.yaml --wait
   $0 update   -r portainer.local -u admin -p secret -s mystack -f docker-compose.yaml --wait
-  $0 diff     -r portainer.local -u admin -s mystack -f docker-compose.yaml
   $0 delete   -r portainer.local -u admin -s mystack
-  $0 logs     -r portainer.local -u admin -s mystack
-  $0 dry-run  -r portainer.local -u admin -s mystack -f docker-compose.yaml
 
 Notes:
   - This script requires valid SSL certificates on your Portainer instance.
   - Passwords are never echoed or logged.
+  - 'dry-run' is not supported by the Portainer API and will always fail.
 EOF
   exit 2
 }
@@ -121,7 +120,6 @@ curl_retry() {
 #   AUTHENTICATION             #
 #===============================#
 authenticate() {
-  verbose_log "Authenticating..."
   local token
   token=$(curl_retry -s -X POST -H "Content-Type: application/json" \
     -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
@@ -142,6 +140,9 @@ get_stack_id() {
 
 get_endpoint_id() {
   local resp
+  [[ -z "$PORTAINER_URL" ]] && error_msg "Portainer URL is not set." && exit 12
+  [[ -z "$1" ]] && error_msg "Authentication token is not set." && exit 12
+
   resp=$(curl_retry -s -H "Authorization: Bearer $1" "https://$PORTAINER_URL/api/endpoints")
   [[ $? -ne 0 ]] && error_msg "Failed to get endpoints" && exit 13
   echo "$resp" | jq -r '.[0].Id'
@@ -169,12 +170,13 @@ fetch_remote_compose() {
 deploy_stack() {
   local swarm_id url http_code tmpfile
   swarm_id=$(get_swarm_id "$1" "$2")
-  url="https://$PORTAINER_URL/api/stacks/create?type=1&endpointId=$2"
+  url="https://$PORTAINER_URL/api/stacks/create/swarm/file"
   tmpfile=$(mktemp)
   TMPFILES+=("$tmpfile")
+
   http_code=$(curl_retry -s -w "%{http_code}" -o "$tmpfile" \
     -X POST -H "Authorization: Bearer $1" \
-    -F "Name=$STACK_NAME" -F "SwarmID=$swarm_id" -F "file=@$FILE_PATH" "$url")
+    -F "Name=$STACK_NAME" -F "SwarmID=$swarm_id" -F "file=@$FILE_PATH" -F "endpointId=$2" "$url")
   if [[ "$http_code" == "200" ]]; then
     success_msg "Stack deployed successfully."
   else
@@ -213,45 +215,25 @@ diff_stack() {
 
 wait_for_stack_ready() {
   local token="$1" endpoint_id="$2" stack_id="$3" max_attempts=30 attempt=1
-  verbose_log "Waiting for stack services to be running..."
   while (( attempt <= max_attempts )); do
-    local services
-    services=$(curl_retry -s -H "Authorization: Bearer $token" \
-      "https://$PORTAINER_URL/api/stacks/$stack_id/services?endpointId=$endpoint_id")
-    [[ $? -ne 0 ]] && error_msg "Failed to fetch stack services" && exit 30
-    local not_running
-    not_running=$(echo "$services" | jq '[.[] | select(.ServiceStatus.DesiredTasks != .ServiceStatus.RunningTasks)] | length')
-    if [[ "$not_running" -eq 0 ]]; then
-      success_msg "All stack services are running."
+    local stack_info status
+    stack_info=$(curl_retry -s -H "Authorization: Bearer $token" \
+      "https://$PORTAINER_URL/api/stacks/$stack_id")
+    if [[ $? -ne 0 || -z "$stack_info" ]]; then
+      error_msg "Failed to fetch stack status (empty or error response)"
+      exit 30
+    fi
+    status=$(echo "$stack_info" | jq -r '.Status // empty')
+    if [[ "$status" == "1" ]]; then
+      success_msg "Stack is ready (Status=1)."
       return 0
     fi
-    verbose_log "Waiting... ($attempt/$max_attempts)"
+    
     sleep 3
     ((attempt++))
   done
-  error_msg "Timeout waiting for stack services to be running."
+  error_msg "Timeout waiting for stack to become ready."
   exit 31
-}
-
-dry_run_stack() {
-  error_msg "Dry-run/compose validation is not supported: no suitable Portainer API endpoint exists."
-  exit 40
-}
-
-logs_stack() {
-  local token="$1" endpoint_id="$2" stack_id="$3"
-  local services
-  services=$(curl_retry -s -H "Authorization: Bearer $token" \
-    "https://$PORTAINER_URL/api/stacks/$stack_id/services?endpointId=$endpoint_id")
-  [[ $? -ne 0 ]] && error_msg "Failed to fetch stack services" && exit 50
-  local service_ids
-  service_ids=$(echo "$services" | jq -r '.[].ID')
-  for sid in $service_ids; do
-    info_msg "Logs for service $sid:"
-    curl_retry -s -H "Authorization: Bearer $token" \
-      "https://$PORTAINER_URL/api/endpoints/$endpoint_id/docker/services/$sid/logs?stdout=true&stderr=true&timestamps=false&tail=100"
-    echo
-  done
 }
 
 #===============================#
@@ -295,28 +277,25 @@ done
 # Set the main operation variable based on MAIN_OP
 DO_DIFF=; DO_UPDATE=; DO_DELETE=; DO_DRYRUN=; DO_LOGS=; DO_DEPLOY=
 case "$MAIN_OP" in
-  diff)    DO_DIFF=true;;
-  update)  DO_UPDATE=true;;
-  delete)  DO_DELETE=true;;
-  dry-run) DO_DRYRUN=true;;
-  logs)    DO_LOGS=true;;
-  deploy)  DO_DEPLOY=true;;
-  "")      ;; # default deploy if none given
-  *) error_msg "Unknown main command: $MAIN_OP"; usage;;
+  diff)    DO_DIFF=true ;;
+  update)  DO_UPDATE=true ;;
+  delete)  DO_DELETE=true ;;
+  dry-run) DO_DRYRUN=true ;;
+  logs)    DO_LOGS=true ;;
+  deploy)  DO_DEPLOY=true ;;
+  "")      DO_DEPLOY=true ;;  # Default to deploy if no command is given
+  *) error_msg "Unknown main command: $MAIN_OP"; usage ;;
 esac
 
-# Ensure only one main operation is specified
-main_ops=0
-[[ -n "${DO_UPDATE:-}" ]] && ((main_ops++))
-[[ -n "${DO_DELETE:-}" ]] && ((main_ops++))
-[[ -n "${DO_DIFF:-}" ]] && ((main_ops++))
-[[ -n "${DO_DRYRUN:-}" ]] && ((main_ops++))
-[[ -n "${DO_LOGS:-}" ]] && ((main_ops++))
-[[ -n "${DO_DEPLOY:-}" ]] && ((main_ops++))
-if (( main_ops > 1 )); then
-  error_msg "Only one of deploy, update, delete, diff, dry-run, or logs can be specified at a time."
-  exit 5
+#===============================#
+#   VALIDATION                #
+#===============================#
+# Validate that at least one main operation is specified
+if [[ -z "${DO_DIFF:-}" && -z "${DO_UPDATE:-}" && -z "${DO_DELETE:-}" && -z "${DO_DRYRUN:-}" && -z "${DO_LOGS:-}" && -z "${DO_DEPLOY:-}" ]]; then
+  error_msg "No main operation specified. Use deploy, update, delete, diff, dry-run, or logs."
+  exit 1
 fi
+
 
 # Secure password input
 if [[ -z "${PASSWORD:-}" ]]; then
@@ -334,22 +313,9 @@ validate_inputs
 #   MAIN LOGIC                 #
 #===============================#
 TOKEN=$(authenticate)
+
 ENDPOINT_ID=$(get_endpoint_id "$TOKEN")
 STACK_ID=$(get_stack_id "$TOKEN")
-
-if [[ -n "${DO_DRYRUN:-}" ]]; then
-  dry_run_stack
-  exit 0
-fi
-
-if [[ -n "${DO_LOGS:-}" ]]; then
-  if [[ -z "$STACK_ID" ]]; then
-    error_msg "Cannot fetch logs: stack '$STACK_NAME' does not exist."
-    exit 51
-  fi
-  logs_stack "$TOKEN" "$ENDPOINT_ID" "$STACK_ID"
-  exit 0
-fi
 
 if [[ -n "${DO_DELETE:-}" ]]; then
   [[ -z "$STACK_ID" ]] && info_msg "Stack does not exist." && exit 0
@@ -361,12 +327,6 @@ elif [[ -n "${DO_UPDATE:-}" ]]; then
   fi
   update_stack "$TOKEN" "$ENDPOINT_ID" "$STACK_ID"
   [[ -n "${DO_WAIT:-}" ]] && wait_for_stack_ready "$TOKEN" "$ENDPOINT_ID" "$STACK_ID"
-elif [[ -n "${DO_DIFF:-}" ]]; then
-  if [[ -z "$STACK_ID" ]]; then
-    info_msg "Cannot diff: stack '$STACK_NAME' does not exist."
-    exit 21
-  fi
-  diff_stack "$TOKEN" "$STACK_ID"
 else
   # Default or explicit deploy
   if [[ -n "$STACK_ID" ]]; then
