@@ -57,11 +57,10 @@ usage() {
 Usage: $0 <command> [options]
 
 Commands (choose one):
+  list       List stacks in a portainer instance
   deploy     Deploy a new stack (default if no command is given)
-  diff       Diff current vs new compose
   update     Update the stack
   delete     Delete the stack
-  dry-run    Validate the compose file via the API, do not deploy/update (not supported)
   
 Options:
   -r, --url           Portainer URL (e.g. portainer.example.com)
@@ -73,6 +72,7 @@ Options:
   -v, --verbose       Verbose output
 
 Examples:
+  $0 list     -r portainer.local -u admin -p secret
   $0 deploy   -r portainer.local -u admin -p secret -s mystack -f docker-compose.yaml --wait
   $0 update   -r portainer.local -u admin -p secret -s mystack -f docker-compose.yaml --wait
   $0 delete   -r portainer.local -u admin -s mystack
@@ -80,25 +80,59 @@ Examples:
 Notes:
   - This script requires valid SSL certificates on your Portainer instance.
   - Passwords are never echoed or logged.
-  - 'dry-run' is not supported by the Portainer API and will always fail.
 EOF
   exit 2
 }
 
 # Validate file and URL
 validate_inputs() {
-  [[ -z "${PORTAINER_URL:-}" || -z "${USERNAME:-}" || -z "${PASSWORD:-}" || -z "${STACK_NAME:-}" ]] && usage
-  if [[ -z "${FILE_PATH:-}" && -z "${DO_DELETE:-}" && -z "${DO_LOGS:-}" && -z "${DO_DRYRUN:-}" ]]; then
-    error_msg "Missing required argument: --file-path"
+  local errors=()
+
+  # Check URL and username
+  [[ -z "${PORTAINER_URL:-}" ]] && errors+=("--url is required")
+  [[ -z "${USERNAME:-}" ]] && errors+=("--username is required")
+
+  # Password can come from env
+  if [[ -z "${PASSWORD:-}" ]]; then
+    if [[ -n "${PORTAINER_PASSWORD:-}" ]]; then
+      PASSWORD="$PORTAINER_PASSWORD"
+    elif [[ "$NON_INTERACTIVE" == false && -t 0 ]]; then
+      read -rsp "Portainer password: " PASSWORD
+      echo
+    else
+      errors+=("--password is required (or set PORTAINER_PASSWORD env)")
+    fi
+  fi
+
+  # Command-specific checks
+  case "$COMMAND" in
+    list)
+      # no additional
+      ;;
+    deploy|update)
+      [[ -z "${STACK_NAME:-}" ]] && errors+=("--stack-name is required for $COMMAND")
+      [[ -z "${FILE_PATH:-}" ]] && errors+=("--file-path is required for $COMMAND")
+      [[ -n "${FILE_PATH:-}" && ! -f "$FILE_PATH" ]] && errors+=("Compose file '$FILE_PATH' does not exist")
+      ;;
+    delete)
+      [[ -z "${STACK_NAME:-}" ]] && errors+=("--stack-name is required for delete")
+      ;;
+    *)
+      errors+=("Unknown command: $COMMAND")
+      ;;
+  esac
+
+  # Validate URL format
+  if [[ -n "${PORTAINER_URL:-}" ]] && ! [[ "$PORTAINER_URL" =~ ^[a-zA-Z0-9.-]+(:[0-9]+)?$ ]]; then
+    errors+=("Invalid Portainer URL: $PORTAINER_URL")
+  fi
+
+  # If any errors, print all and exit
+  if (( ${#errors[@]} > 0 )); then
+    for e in "${errors[@]}"; do
+      error_msg "$e"
+    done
     usage
-  fi
-  if [[ -n "${FILE_PATH:-}" && ! -f "$FILE_PATH" ]]; then
-    error_msg "Compose file '$FILE_PATH' does not exist."
-    exit 3
-  fi
-  if ! [[ "$PORTAINER_URL" =~ ^[a-zA-Z0-9.-]+(:[0-9]+)?$ ]]; then
-    error_msg "Invalid Portainer URL: $PORTAINER_URL"
-    exit 4
   fi
 }
 
@@ -155,18 +189,56 @@ get_swarm_id() {
   echo "$resp" | jq -r .ID
 }
 
-fetch_remote_compose() {
+#===============================#
+#   STACK OPERATIONS            #
+#===============================#
+wait_for_stack_ready() {
+  local token="$1" endpoint_id="$2" stack_id="$3" max_attempts=30 attempt=1
+  while (( attempt <= max_attempts )); do
+    local stack_info status
+    stack_info=$(curl_retry -s -H "Authorization: Bearer $token" \
+      "https://$PORTAINER_URL/api/stacks/$stack_id")
+    if [[ $? -ne 0 || -z "$stack_info" ]]; then
+      error_msg "Failed to fetch stack status (empty or error response)"
+      exit 30
+    fi
+    status=$(echo "$stack_info" | jq -r '.Status // empty')
+    if [[ "$status" == "1" ]]; then
+      success_msg "Stack is ready (Status=1)."
+      return 0
+    fi
+    
+    sleep 3
+    ((attempt++))
+  done
+  error_msg "Timeout waiting for stack to become ready."
+  exit 31
+}
+
+list_stacks() {
+  local token="$1"
+  local url="https://$PORTAINER_URL/api/stacks"
+
   local tmpfile
   tmpfile=$(mktemp)
   TMPFILES+=("$tmpfile")
-  curl_retry -s -H "Authorization: Bearer $1" "https://$PORTAINER_URL/api/stacks/$2/file" -o "$tmpfile"
-  [[ $? -ne 0 ]] && error_msg "Failed to fetch remote compose file" && exit 15
-  echo "$tmpfile"
+
+  local http_code
+  http_code=$(curl_retry -s -w "%{http_code}" -o "$tmpfile" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    "$url")
+
+  if [[ "$http_code" == "200" ]]; then
+    echo -e "${green}Stacks available in Portainer:$reset"
+    jq -r '.[] | "- \(.Name) [ID: \(.Id), EndpointId: \(.EndpointId)]"' "$tmpfile"
+  else
+    error_msg "Failed to list stacks. HTTP $http_code"
+    cat "$tmpfile"
+    exit 17
+  fi
 }
 
-#===============================#
-#   STACK OPERATIONS           #
-#===============================#
 deploy_stack() {
   local swarm_id url http_code tmpfile
   swarm_id=$(get_swarm_id "$1" "$2")
@@ -203,56 +275,23 @@ delete_stack() {
   info_msg "Stack deleted successfully."
 }
 
-diff_stack() {
-  local remote_file
-  remote_file=$(fetch_remote_compose "$1" "$2")
-  if ! diff -u "$remote_file" "$FILE_PATH"; then
-    :
-  else
-    info_msg "No diff or stack does not exist."
-  fi
-}
-
-wait_for_stack_ready() {
-  local token="$1" endpoint_id="$2" stack_id="$3" max_attempts=30 attempt=1
-  while (( attempt <= max_attempts )); do
-    local stack_info status
-    stack_info=$(curl_retry -s -H "Authorization: Bearer $token" \
-      "https://$PORTAINER_URL/api/stacks/$stack_id")
-    if [[ $? -ne 0 || -z "$stack_info" ]]; then
-      error_msg "Failed to fetch stack status (empty or error response)"
-      exit 30
-    fi
-    status=$(echo "$stack_info" | jq -r '.Status // empty')
-    if [[ "$status" == "1" ]]; then
-      success_msg "Stack is ready (Status=1)."
-      return 0
-    fi
-    
-    sleep 3
-    ((attempt++))
-  done
-  error_msg "Timeout waiting for stack to become ready."
-  exit 31
-}
-
 #===============================#
 #   ARGUMENT PARSING           #
 #===============================#
 
-# The first non-flag argument is the main command (diff, update, delete, dry-run, logs)
+# The first non-flag argument is the main command (list, deploy, update, delete)
 if [[ $# -eq 0 ]]; then
   usage
 fi
 
-MAIN_OP=""
+COMMAND=""
 case "$1" in
-  deploy|diff|update|delete|dry-run|logs)
-    MAIN_OP="$1"
+  list|deploy|update|delete)
+    COMMAND="$1"
     shift
     ;;
   *)
-    MAIN_OP=""
+    COMMAND=""
     ;;
 esac
 
@@ -276,14 +315,12 @@ done
 
 # Set the main operation variable based on MAIN_OP
 DO_DIFF=; DO_UPDATE=; DO_DELETE=; DO_DRYRUN=; DO_LOGS=; DO_DEPLOY=
-case "$MAIN_OP" in
-  diff)    DO_DIFF=true ;;
+case "$COMMAND" in
+  list)    DO_LIST=true ;;
+  deploy)  DO_DEPLOY=true ;;
   update)  DO_UPDATE=true ;;
   delete)  DO_DELETE=true ;;
-  dry-run) DO_DRYRUN=true ;;
-  logs)    DO_LOGS=true ;;
-  deploy)  DO_DEPLOY=true ;;
-  "")      DO_DEPLOY=true ;;  # Default to deploy if no command is given
+  "")      DO_LIST=true ;;
   *) error_msg "Unknown main command: $MAIN_OP"; usage ;;
 esac
 
@@ -291,11 +328,10 @@ esac
 #   VALIDATION                #
 #===============================#
 # Validate that at least one main operation is specified
-if [[ -z "${DO_DIFF:-}" && -z "${DO_UPDATE:-}" && -z "${DO_DELETE:-}" && -z "${DO_DRYRUN:-}" && -z "${DO_LOGS:-}" && -z "${DO_DEPLOY:-}" ]]; then
-  error_msg "No main operation specified. Use deploy, update, delete, diff, dry-run, or logs."
+if [[ -z "${DO_LIST:-}" && -z "${DO_UPDATE:-}" && -z "${DO_DELETE:-}" && -z "${DO_DEPLOY:-}" ]]; then
+  error_msg "No main operation specified. Use list, deploy, update or delete."
   exit 1
 fi
-
 
 # Secure password input
 if [[ -z "${PASSWORD:-}" ]]; then
@@ -310,14 +346,18 @@ fi
 validate_inputs
 
 #===============================#
-#   MAIN LOGIC                 #
+#   MAIN LOGIC                  #
 #===============================#
 TOKEN=$(authenticate)
-
 ENDPOINT_ID=$(get_endpoint_id "$TOKEN")
-STACK_ID=$(get_stack_id "$TOKEN")
+# Fetch stack ID only when needed
+if [[ "$COMMAND" != "list" ]]; then
+  STACK_ID=$(get_stack_id "$TOKEN" "$ENDPOINT_ID")
+fi
 
-if [[ -n "${DO_DELETE:-}" ]]; then
+if [[ -n "${DO_LIST:-}" ]]; then
+  list_stacks "$TOKEN" 
+elif [[ -n "${DO_DELETE:-}" ]]; then
   [[ -z "$STACK_ID" ]] && info_msg "Stack does not exist." && exit 0
   delete_stack "$TOKEN" "$STACK_ID" "$ENDPOINT_ID"
 elif [[ -n "${DO_UPDATE:-}" ]]; then
@@ -330,7 +370,7 @@ elif [[ -n "${DO_UPDATE:-}" ]]; then
 else
   # Default or explicit deploy
   if [[ -n "$STACK_ID" ]]; then
-    error_msg "Stack already exists. Use update to update it."
+    error_msg "Stack '${STACK_NAME}' already exists. Use update to update it."
     exit 22
   fi
   deploy_stack "$TOKEN" "$ENDPOINT_ID"
